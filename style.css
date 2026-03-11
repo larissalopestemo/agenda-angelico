@@ -145,7 +145,8 @@ header {
   height: auto;
   width: 40%;
   max-width: 220px;
-  margin-bottom: 8px;
+  margin: 0 auto 8px auto;
+  display: block;
 }
 
 .login-box h2 {
