@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Angélico Advogados — Agenda de Prazos</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="header-inner">
+    <img src="logo_angelico.png" alt="Angélico Advogados" class="logo">
+    <div class="header-right">
+      <div class="user-info" id="userInfo" style="display:none">
+        <span class="user-name" id="userName"></span>
+        <button class="btn-ghost" onclick="logout()">Sair</button>
+      </div>
+      <div class="clock" id="clock">--:--:--</div>
+    </div>
+  </div>
+</header>
+
+<!-- ALERT BANNER -->
+<div class="alert-banner" id="alertBanner">
+  <span class="alert-icon">⚠</span>
+  <span id="alertText"></span>
+</div>
+
+<!-- LOGIN SCREEN -->
+<div class="screen" id="screenLogin">
+  <div class="login-box">
+    <img src="logo_angelico.png" alt="Angélico Advogados" class="login-logo">
+    <h2>Agenda de Prazos</h2>
+    <p class="login-sub">Acesse com seu e-mail institucional</p>
+    <div class="field">
+      <label>Nome</label>
+      <input type="text" id="login-name" placeholder="Seu nome completo">
+    </div>
+    <div class="field">
+      <label>E-mail</label>
+      <input type="email" id="login-email" placeholder="seu@email.com.br">
+    </div>
+    <button class="btn-primary" onclick="login()">Entrar</button>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div class="screen" id="screenApp" style="display:none">
+  <div class="app-layout">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="sidebar-section">
+        <h3 class="section-label">Nova Tarefa</h3>
+
+        <div class="field">
+          <label>Título *</label>
+          <input type="text" id="inp-title" placeholder="Ex: Petição inicial — Processo 123">
+        </div>
+
+        <div class="field">
+          <label>Descrição</label>
+          <textarea id="inp-desc" placeholder="Detalhes do prazo ou observações..."></textarea>
+        </div>
+
+        <div class="field">
+          <label>Prazo *</label>
+          <input type="datetime-local" id="inp-date">
+        </div>
+
+        <div class="field">
+          <label>Responsável</label>
+          <input type="text" id="inp-resp" placeholder="Nome do advogado responsável">
+        </div>
+
+        <div class="field">
+          <label>Processo / Ref.</label>
+          <input type="text" id="inp-proc" placeholder="Nº do processo ou referência">
+        </div>
+
+        <div class="field">
+          <label>Categoria</label>
+          <select id="inp-cat">
+            <option value="peticao">Petição</option>
+            <option value="audiencia">Audiência</option>
+            <option value="recurso">Recurso</option>
+            <option value="prazo_fatal">Prazo Fatal</option>
+            <option value="protocolo">Protocolo</option>
+            <option value="reuniao">Reunião</option>
+            <option value="pagamento">Pagamento</option>
+            <option value="outro">Outro</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Prioridade</label>
+          <div class="prio-group">
+            <button class="prio-btn active-low" data-prio="low" onclick="selectPrio(this)">Baixa</button>
+            <button class="prio-btn" data-prio="medium" onclick="selectPrio(this)">Média</button>
+            <button class="prio-btn" data-prio="high" onclick="selectPrio(this)">Alta</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Aviso por e-mail</label>
+          <select id="inp-alert">
+            <option value="0">Sem aviso</option>
+            <option value="60">1 hora antes</option>
+            <option value="180">3 horas antes</option>
+            <option value="1440" selected>1 dia antes</option>
+            <option value="2880">2 dias antes</option>
+            <option value="4320">3 dias antes</option>
+            <option value="10080">1 semana antes</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Notificar e-mails (separados por vírgula)</label>
+          <input type="text" id="inp-emails" placeholder="adv1@email.com, adv2@email.com">
+        </div>
+
+        <button class="btn-primary" onclick="addTask()">+ Adicionar Prazo</button>
+      </div>
+
+      <!-- STATS -->
+      <div class="stats-grid">
+        <div class="stat-box danger">
+          <div class="stat-num" id="stat-overdue">0</div>
+          <div class="stat-lbl">Atrasados</div>
+        </div>
+        <div class="stat-box warn">
+          <div class="stat-num" id="stat-today">0</div>
+          <div class="stat-lbl">Hoje</div>
+        </div>
+        <div class="stat-box ok">
+          <div class="stat-num" id="stat-total">0</div>
+          <div class="stat-lbl">Ativos</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- MAIN LIST -->
+    <main class="main-content">
+      <div class="toolbar">
+        <h2 class="toolbar-title">Prazos</h2>
+        <div class="filters">
+          <button class="filter-btn active" data-filter="all" onclick="setFilter(this)">Todos</button>
+          <button class="filter-btn" data-filter="active" onclick="setFilter(this)">Ativos</button>
+          <button class="filter-btn" data-filter="overdue" onclick="setFilter(this)">Atrasados</button>
+          <button class="filter-btn" data-filter="done" onclick="setFilter(this)">Concluídos</button>
+        </div>
+        <input class="search-input" type="text" id="searchInput" placeholder="Buscar prazo ou processo..." oninput="render()">
+      </div>
+
+      <div id="taskList" class="task-list"></div>
+    </main>
+  </div>
+</div>
+
+<!-- TOAST CONTAINER -->
+<div id="toastContainer" class="toast-container"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
