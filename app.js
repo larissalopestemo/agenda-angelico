@@ -27,18 +27,16 @@ const EMAILJS_CONFIG = {
 
 // =============================================
 // USUÁRIOS AUTORIZADOS
-// Para adicionar novos usuários, inclua um novo objeto
-// nesta lista seguindo o mesmo formato abaixo.
-// A senha padrão é angelico@13 — pode ser alterada individualmente.
-// IMPORTANTE: role 'admin' tem acesso total; role 'user' acesso restrito.
 // =============================================
 const AUTHORIZED_USERS = [
-  { name: 'Andrea Angélico', email: 'andrea@anlema.com.br', password: 'angelico@13', role: 'admin' },
-  { name: 'Debora Pelogi',  email: 'debora.pelogi@anlema.com.br', password: 'angelico@13', role: 'user'  },
-  { name: 'Larissa Lopes',  email: 'paralegal@anlema.com.br',     password: 'angelico@13', role: 'user'  },
-  { name: 'Thiago Prado',   email: 'thiago.prado@anlema.com.br',  password: 'angelico@13', role: 'user'  },
-  { name: 'Beatriz Amaro',  email: 'beatriz.amaro@anlema.com.br', password: 'angelico@13', role: 'user'  },
+  { name: 'Andrea Angélico', email: 'andrea@anlema.com.br',        password: 'angelico@13', role: 'admin' },
+  { name: 'Debora Pelogi',   email: 'debora.pelogi@anlema.com.br', password: 'angelico@13', role: 'user'  },
+  { name: 'Larissa Lopes',   email: 'paralegal@anlema.com.br',     password: 'angelico@13', role: 'user'  },
+  { name: 'Thiago Prado',    email: 'thiago.prado@anlema.com.br',  password: 'angelico@13', role: 'user'  },
+  { name: 'Beatriz Amaro',   email: 'beatriz.amaro@anlema.com.br', password: 'angelico@13', role: 'user'  },
 ];
+
+const ANDREA_EMAIL = 'andrea@anlema.com.br';
 
 // =============================================
 // ESTADO
@@ -54,34 +52,46 @@ let notifiedKeys      = new Set();
 // =============================================
 // HELPERS
 // =============================================
+function normalizeEmail(email) {
+  return (email || '').toLowerCase().trim();
+}
+
+function isAndrea(email) {
+  return normalizeEmail(email) === ANDREA_EMAIL;
+}
+
 function isAdmin(email) {
-  const u = AUTHORIZED_USERS.find(x => x.email === (email || '').toLowerCase().trim());
+  const u = AUTHORIZED_USERS.find(x => normalizeEmail(x.email) === normalizeEmail(email));
   return !!(u && u.role === 'admin');
 }
 
-function canBeAssignedAsResponsavel(user) {
-  if (!user || !currentUser) return false;
-
-  // Admin só pode ser atribuído por si mesmo
-  if (user.role === 'admin') {
-    return currentUser.email === user.email;
+function getAssignableUsers() {
+  // Andrea só aparece para ela mesma
+  if (currentUser && isAndrea(currentUser.email)) {
+    return AUTHORIZED_USERS;
   }
 
-  return true;
+  return AUTHORIZED_USERS.filter(u => !isAndrea(u.email));
 }
 
 function sanitizeResponsaveis(emails, includeCurrentUser = true) {
-  let lista = Array.isArray(emails) ? emails : [];
+  let lista = Array.isArray(emails) ? emails.map(normalizeEmail) : [];
 
-  lista = lista.filter(email => {
-    const user = AUTHORIZED_USERS.find(u => u.email === email);
-    return canBeAssignedAsResponsavel(user);
-  });
+  // Remove Andrea para qualquer pessoa que não seja a própria Andrea
+  if (!isAndrea(currentUser?.email)) {
+    lista = lista.filter(email => !isAndrea(email));
+  }
 
-  if (includeCurrentUser && currentUser) {
-    const me = AUTHORIZED_USERS.find(u => u.email === currentUser.email);
-    if (canBeAssignedAsResponsavel(me) && !lista.includes(currentUser.email)) {
-      lista.unshift(currentUser.email);
+  // Mantém apenas usuários autorizados
+  lista = lista.filter(email =>
+    AUTHORIZED_USERS.some(u => normalizeEmail(u.email) === email)
+  );
+
+  // Garante que o usuário logado esteja na própria tarefa, inclusive Andrea
+  if (includeCurrentUser && currentUser?.email) {
+    const me = normalizeEmail(currentUser.email);
+    if (!lista.includes(me)) {
+      lista.unshift(me);
     }
   }
 
@@ -105,7 +115,7 @@ function canEditTask(task) {
 }
 
 function getUserName(email) {
-  const u = AUTHORIZED_USERS.find(x => x.email === email);
+  const u = AUTHORIZED_USERS.find(x => normalizeEmail(x.email) === normalizeEmail(email));
   return u ? u.name : email;
 }
 
@@ -129,7 +139,7 @@ function populateTeamSelect() {
   const container = document.getElementById('inp-responsaveis');
   if (!container) return;
 
-  const lista = AUTHORIZED_USERS.filter(canBeAssignedAsResponsavel);
+  const lista = getAssignableUsers();
 
   container.innerHTML = lista.map(u => `
     <label class="team-checkbox">
@@ -201,20 +211,24 @@ function deleteTaskFirebase(id) {
 function loadLocalTasks() {
   tasks = JSON.parse(localStorage.getItem('angelico-tasks')||'[]');
   notifiedKeys = new Set(JSON.parse(localStorage.getItem('angelico-notified')||'[]'));
-  render(); checkAlerts();
+  render();
+  checkAlerts();
 }
+
 function saveLocalTask(task) {
   task.id = Date.now().toString();
   tasks.unshift(task);
   localStorage.setItem('angelico-tasks', JSON.stringify(tasks));
   render();
 }
+
 function updateLocalTask(id, data) {
   const t = tasks.find(x => x.id==id);
   if (t) Object.assign(t, data);
   localStorage.setItem('angelico-tasks', JSON.stringify(tasks));
   render();
 }
+
 function deleteLocalTask(id) {
   tasks = tasks.filter(x => x.id!=id);
   localStorage.setItem('angelico-tasks', JSON.stringify(tasks));
@@ -225,18 +239,20 @@ function deleteLocalTask(id) {
 // LOGIN / LOGOUT
 // =============================================
 function login() {
-  const email    = document.getElementById('login-email').value.trim().toLowerCase();
+  const email    = normalizeEmail(document.getElementById('login-email').value);
   const password = document.getElementById('login-password').value;
-  const user     = AUTHORIZED_USERS.find(u => u.email === email);
+  const user     = AUTHORIZED_USERS.find(u => normalizeEmail(u.email) === email);
 
   if (!user) { showLoginError('E-mail não autorizado. Solicite acesso ao administrador.'); return; }
   if (user.password !== password) { showLoginError('Senha incorreta.'); return; }
 
-  currentUser = { name: user.name, email: user.email, role: user.role };
+  currentUser = { name: user.name, email: normalizeEmail(user.email), role: user.role };
   sessionStorage.setItem('angelico-user', JSON.stringify(currentUser));
   document.getElementById('login-error').style.display = 'none';
+
   showApp();
   populateTeamSelect();
+
   if (db) listenTasks(); else loadLocalTasks();
 }
 
@@ -289,7 +305,6 @@ function handleAvatarUpload(input) {
   const reader = new FileReader();
   reader.onload = e => {
     const data = e.target.result;
-    // Salva no Firebase para sincronizar entre dispositivos
     if (db) {
       db.ref('avatars/' + currentUser.email.replace(/[.#$\[\]]/g,'_')).set(data);
     } else {
@@ -324,11 +339,10 @@ function openNewTaskModal() {
 
   populateTeamSelect();
 
-  // Pre-seleciona o próprio usuário como responsável
   const container = document.getElementById('inp-responsaveis');
   if (container) {
     container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-      cb.checked = cb.value === currentUser.email;
+      cb.checked = normalizeEmail(cb.value) === normalizeEmail(currentUser.email);
     });
   }
 
@@ -341,11 +355,11 @@ function closeNewTaskModal() {
   resetForm();
 }
 
-
 function toggleCustomAlert(sel) {
   const field = document.getElementById('field-custom-alert');
   if (field) field.style.display = sel.value === 'custom' ? 'block' : 'none';
 }
+
 // =============================================
 // ADICIONAR TAREFA
 // =============================================
@@ -357,7 +371,7 @@ function addTask() {
 
   const container = document.getElementById('inp-responsaveis');
   let responsaveis = container
-    ? Array.from(container.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value)
+    ? Array.from(container.querySelectorAll('input[type="checkbox"]:checked')).map(cb => normalizeEmail(cb.value))
     : [];
 
   responsaveis = sanitizeResponsaveis(responsaveis, true);
@@ -391,7 +405,7 @@ function addTask() {
     })(),
     emails,
     visibility,
-    ownerEmail:  currentUser.email,
+    ownerEmail:  normalizeEmail(currentUser.email),
     done:        false,
     createdBy:   currentUser.name,
     createdAt:   new Date().toISOString(),
@@ -404,11 +418,17 @@ function addTask() {
 }
 
 function resetForm() {
-  ['inp-title','inp-desc','inp-proc'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+  ['inp-title','inp-desc','inp-proc'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+
   const container = document.getElementById('inp-responsaveis');
   if (container) container.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+
   const priv = document.getElementById('inp-privado');
   if (priv) priv.checked = false;
+
   document.querySelectorAll('.prio-btn').forEach(b => b.className='prio-btn');
   const low = document.querySelector('.prio-btn[data-prio="low"]');
   if (low) low.classList.add('active-low');
@@ -422,20 +442,19 @@ function openEditModal(id) {
   const t = tasks.find(x => x.id==id);
   if (!t || !canEditTask(t)) return;
 
-  document.getElementById('edit-id').value    = id;
-  document.getElementById('edit-title').value = t.title;
-  document.getElementById('edit-date').value  = t.date;
-  document.getElementById('edit-desc').value  = t.desc || '';
+  document.getElementById('edit-id').value     = id;
+  document.getElementById('edit-title').value  = t.title;
+  document.getElementById('edit-date').value   = t.date;
+  document.getElementById('edit-desc').value   = t.desc || '';
   document.getElementById('edit-justif').value = '';
 
-  // Preenche checkboxes de responsáveis
   const container = document.getElementById('edit-responsaveis');
   if (container) {
-    const lista = AUTHORIZED_USERS.filter(canBeAssignedAsResponsavel);
+    const lista = getAssignableUsers();
 
     container.innerHTML = lista.map(u => `
       <label class="team-checkbox">
-        <input type="checkbox" value="${u.email}" ${Array.isArray(t.responsaveis) && t.responsaveis.includes(u.email) ? 'checked' : ''}>
+        <input type="checkbox" value="${u.email}" ${Array.isArray(t.responsaveis) && t.responsaveis.includes(normalizeEmail(u.email)) ? 'checked' : ''}>
         <span class="team-check-name">${u.name}</span>
       </label>
     `).join('');
@@ -462,11 +481,11 @@ function closeEditModal() {
 }
 
 function saveEdit() {
-  const id    = document.getElementById('edit-id').value;
-  const title = document.getElementById('edit-title').value.trim();
-  const date  = document.getElementById('edit-date').value;
-  const desc  = document.getElementById('edit-desc').value.trim();
-  const justif= document.getElementById('edit-justif').value.trim();
+  const id     = document.getElementById('edit-id').value;
+  const title  = document.getElementById('edit-title').value.trim();
+  const date   = document.getElementById('edit-date').value;
+  const desc   = document.getElementById('edit-desc').value.trim();
+  const justif = document.getElementById('edit-justif').value.trim();
 
   if (!title)  { showToast('⚠️','Obrigatório','Informe o título.','warn'); return; }
   if (!date)   { showToast('⚠️','Obrigatório','Informe o prazo.','warn');  return; }
@@ -483,7 +502,7 @@ function saveEdit() {
 
   const editContainer = document.getElementById('edit-responsaveis');
   let responsaveis = editContainer
-    ? Array.from(editContainer.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value)
+    ? Array.from(editContainer.querySelectorAll('input[type="checkbox"]:checked')).map(cb => normalizeEmail(cb.value))
     : (tasks.find(x=>x.id==id)||{}).responsaveis || [];
 
   responsaveis = sanitizeResponsaveis(responsaveis, false);
@@ -499,20 +518,19 @@ function saveEdit() {
 function openTransferModal(id) {
   const t = tasks.find(x => x.id==id);
   if (!t || !canEditTask(t)) return;
+
   document.getElementById('transfer-id').value = id;
 
   const sel = document.getElementById('transfer-resp');
   sel.innerHTML = '';
 
-  AUTHORIZED_USERS
-    .filter(canBeAssignedAsResponsavel)
-    .forEach(u => {
-      const opt = document.createElement('option');
-      opt.value = u.email;
-      opt.textContent = u.name;
-      if (t.ownerEmail === u.email) opt.selected = true;
-      sel.appendChild(opt);
-    });
+  getAssignableUsers().forEach(u => {
+    const opt = document.createElement('option');
+    opt.value = u.email;
+    opt.textContent = u.name;
+    if (normalizeEmail(t.ownerEmail) === normalizeEmail(u.email)) opt.selected = true;
+    sel.appendChild(opt);
+  });
 
   document.getElementById('modalTransfer').style.display = 'flex';
 }
@@ -523,11 +541,10 @@ function closeTransferModal() {
 
 function saveTransfer() {
   const id    = document.getElementById('transfer-id').value;
-  const email = document.getElementById('transfer-resp').value;
+  const email = normalizeEmail(document.getElementById('transfer-resp').value);
 
-  const user = AUTHORIZED_USERS.find(u => u.email === email);
-  if (!canBeAssignedAsResponsavel(user)) {
-    showToast('🚫','Sem permissão','Você não pode transferir uma tarefa para esse responsável.','warn');
+  if (isAndrea(email) && !isAndrea(currentUser?.email)) {
+    showToast('🚫','Sem permissão','Somente a Dra. Andrea pode atribuir tarefa para ela mesma.','warn');
     return;
   }
 
@@ -818,7 +835,6 @@ function initClock() {
   setInterval(update, 1000);
 }
 
-
 // =============================================
 // PAINEL DE DETALHE DA TAREFA
 // =============================================
@@ -842,26 +858,25 @@ function openDetail(id) {
     ? t.responsaveis.map(e => getUserName(e)).join(', ')
     : (t.responsaveis || '—');
 
-  // Preenche campos
-  document.getElementById('detail-title').textContent        = t.title;
-  document.getElementById('detail-status-badge').outerHTML   =
+  document.getElementById('detail-title').textContent = t.title;
+  document.getElementById('detail-status-badge').outerHTML =
     `<span id="detail-status-badge">${statusBadge(status)}${t.visibility==='private'?'<span class="badge badge-private">🔒 Privado</span>':''}</span>`;
-  document.getElementById('detail-date').textContent         = fmtDate(t.date);
+  document.getElementById('detail-date').textContent = fmtDate(t.date);
+
   const tlColor = status==='overdue' ? 'var(--danger)' : status==='today' ? 'var(--warn)' : 'var(--ok)';
   document.getElementById('detail-timeleft').innerHTML = tl
     ? `<span style="color:${tlColor}">${tl}</span>`
     : '—';
-  document.getElementById('detail-cat').textContent          = catLabel;
-  document.getElementById('detail-prio').innerHTML           = `<span style="color:${prioColor};font-weight:700">${prioLabel}</span>`;
-  document.getElementById('detail-proc').textContent         = t.proc || '—';
-  document.getElementById('detail-resp').textContent         = respNames;
-  document.getElementById('detail-created-by').textContent   = t.createdBy || '—';
-  document.getElementById('detail-created-at').textContent   = t.createdAt ? fmtDate(t.createdAt) : '—';
 
-  // Barra de prioridade
+  document.getElementById('detail-cat').textContent        = catLabel;
+  document.getElementById('detail-prio').innerHTML         = `<span style="color:${prioColor};font-weight:700">${prioLabel}</span>`;
+  document.getElementById('detail-proc').textContent       = t.proc || '—';
+  document.getElementById('detail-resp').textContent       = respNames;
+  document.getElementById('detail-created-by').textContent = t.createdBy || '—';
+  document.getElementById('detail-created-at').textContent = t.createdAt ? fmtDate(t.createdAt) : '—';
+
   document.getElementById('detail-prio-bar').style.background = prioColor;
 
-  // Descrição
   const descSection = document.getElementById('detail-desc-section');
   const descEl      = document.getElementById('detail-desc');
   if (t.desc) {
@@ -871,7 +886,6 @@ function openDetail(id) {
     descSection.style.display = 'none';
   }
 
-  // Histórico
   const hist = document.getElementById('detail-historico');
   if (t.historico && t.historico.length > 0) {
     hist.innerHTML = t.historico.map(h => `
@@ -885,9 +899,9 @@ function openDetail(id) {
     hist.innerHTML = '<p style="color:var(--muted);font-size:0.72rem;padding:8px 0">Nenhuma alteração registrada.</p>';
   }
 
-  // Botões de ação
   const actions = document.getElementById('detail-actions');
   actions.innerHTML = '';
+
   if (canEdit) {
     const btnEdit = document.createElement('button');
     btnEdit.className = 'btn-detail-action';
@@ -907,6 +921,7 @@ function openDetail(id) {
     btnDone.onclick = () => { toggleDone(id); closeDetail(); };
     actions.appendChild(btnDone);
   }
+
   if (canDel) {
     const btnDel = document.createElement('button');
     btnDel.className = 'btn-detail-action btn-detail-danger';
@@ -915,7 +930,6 @@ function openDetail(id) {
     actions.appendChild(btnDel);
   }
 
-  // Abre o popup
   document.getElementById('detailOverlay').style.display = 'flex';
 }
 
