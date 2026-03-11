@@ -143,10 +143,10 @@ header {
 
 .login-logo {
   height: auto;
-  width: 60%;
+  width: 40%;
   max-width: 220px;
   margin-bottom: 8px;
-  display: flex;
+  display: block;
 }
 
 .login-box h2 {
