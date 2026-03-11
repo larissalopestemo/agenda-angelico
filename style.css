@@ -69,6 +69,7 @@ header {
   height: 36px;
   width: auto;
   filter: brightness(1.1);
+  mix-blend-mode: screen;
 }
 
 .header-right {
@@ -144,8 +145,9 @@ header {
 
 .login-logo {
   height: 48px;
-  width: 1vh;
+  width: 1vw;
   margin-bottom: 8px;
+  mix-blend-mode: screen;
 }
 
 .login-box h2 {
