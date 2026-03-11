@@ -168,13 +168,17 @@
         </div>
         <div class="field">
           <label>Aviso por e-mail</label>
-          <select id="inp-alert">
+          <select id="inp-alert" onchange="toggleCustomAlert(this)">
             <option value="0">Sem aviso</option>
-            <option value="60">1 hora antes</option>
-            <option value="1440" selected>1 dia antes</option>
-            <option value="2880">2 dias antes</option>
+            <option value="30">30 minutos antes</option>
+            <option value="60" selected>1 hora antes</option>
+            <option value="1440">1 dia antes</option>
             <option value="10080">1 semana antes</option>
+            <option value="custom">Personalizado...</option>
           </select>
+          <div id="field-custom-alert" style="display:none;margin-top:8px">
+            <input type="datetime-local" id="inp-alert-custom" placeholder="Data e hora do lembrete">
+          </div>
         </div>
         <div class="field span-2">
           <label>Notificar e-mails (separados por vírgula)</label>
@@ -217,6 +221,10 @@
         <div class="field">
           <label>Descrição</label>
           <input type="text" id="edit-desc">
+        </div>
+        <div class="field span-2">
+          <label>Responsáveis</label>
+          <div id="edit-responsaveis" class="checkbox-team"></div>
         </div>
         <div class="field span-2">
           <label>Justificativa da alteração *</label>

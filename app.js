@@ -33,7 +33,7 @@ const EMAILJS_CONFIG = {
 // IMPORTANTE: role 'admin' tem acesso total; role 'user' acesso restrito.
 // =============================================
 const AUTHORIZED_USERS = [
-  { name: 'Andrea',         email: 'andrea@anlema.com.br',        password: 'angelico@13', role: 'admin' },
+  { name: 'Andrea Angélico',         email: 'andrea@anlema.com.br',        password: 'angelico@13', role: 'admin' },
   { name: 'Debora Pelogi',  email: 'debora.pelogi@anlema.com.br', password: 'angelico@13', role: 'user'  },
   { name: 'Larissa Lopes',  email: 'paralegal@anlema.com.br',     password: 'angelico@13', role: 'user'  },
   { name: 'Thiago Prado',   email: 'thiago.prado@anlema.com.br',  password: 'angelico@13', role: 'user'  },
@@ -225,6 +225,7 @@ function logout() {
 function showApp() {
   document.getElementById('screenLogin').style.display = 'none';
   document.getElementById('screenApp').style.display   = 'block';
+  document.getElementById('userInfo').style.display    = 'flex';
   updateSidebarProfile();
   const el = document.getElementById('inp-emails');
   if (el) el.value = currentUser.email;
@@ -241,8 +242,7 @@ function updateSidebarProfile() {
   const avatarEl = document.getElementById('sidebar-avatar');
   if (nameEl) nameEl.textContent = currentUser.name;
   if (roleEl) roleEl.textContent = currentUser.role === 'admin' ? 'Administrador' : 'Usuário';
-  const saved = localStorage.getItem('avatar-' + currentUser.email);
-  if (avatarEl && saved) avatarEl.src = saved;
+  loadAvatar();
   updateStats();
 }
 
@@ -252,11 +252,30 @@ function handleAvatarUpload(input) {
   const reader = new FileReader();
   reader.onload = e => {
     const data = e.target.result;
-    localStorage.setItem('avatar-' + currentUser.email, data);
+    // Salva no Firebase para sincronizar entre dispositivos
+    if (db) {
+      db.ref('avatars/' + currentUser.email.replace(/[.#$\[\]]/g,'_')).set(data);
+    } else {
+      localStorage.setItem('avatar-' + currentUser.email, data);
+    }
     const avatarEl = document.getElementById('sidebar-avatar');
     if (avatarEl) avatarEl.src = data;
   };
   reader.readAsDataURL(file);
+}
+
+function loadAvatar() {
+  if (!currentUser) return;
+  const avatarEl = document.getElementById('sidebar-avatar');
+  if (!avatarEl) return;
+  if (db) {
+    db.ref('avatars/' + currentUser.email.replace(/[.#$\[\]]/g,'_')).once('value', snap => {
+      if (snap.val()) avatarEl.src = snap.val();
+    });
+  } else {
+    const saved = localStorage.getItem('avatar-' + currentUser.email);
+    if (saved) avatarEl.src = saved;
+  }
 }
 
 // =============================================
@@ -281,6 +300,11 @@ function closeNewTaskModal() {
   resetForm();
 }
 
+
+function toggleCustomAlert(sel) {
+  const field = document.getElementById('field-custom-alert');
+  if (field) field.style.display = sel.value === 'custom' ? 'block' : 'none';
+}
 // =============================================
 // ADICIONAR TAREFA
 // =============================================
@@ -310,7 +334,19 @@ function addTask() {
     proc:        document.getElementById('inp-proc').value.trim(),
     cat:         document.getElementById('inp-cat').value,
     prio:        selectedPrio,
-    alertMin:    parseInt(document.getElementById('inp-alert').value),
+    alertMin:    (() => {
+      const sel = document.getElementById('inp-alert');
+      if (sel.value === 'custom') {
+        const customDt = document.getElementById('inp-alert-custom').value;
+        const taskDt   = document.getElementById('inp-date').value;
+        if (customDt && taskDt) {
+          const diff = Math.round((new Date(taskDt) - new Date(customDt)) / 60000);
+          return diff > 0 ? diff : 0;
+        }
+        return 0;
+      }
+      return parseInt(sel.value);
+    })(),
     emails,
     visibility,
     ownerEmail:  currentUser.email,
@@ -349,6 +385,17 @@ function openEditModal(id) {
   document.getElementById('edit-date').value  = t.date;
   document.getElementById('edit-desc').value  = t.desc || '';
   document.getElementById('edit-justif').value = '';
+
+  // Preenche checkboxes de responsáveis
+  const container = document.getElementById('edit-responsaveis');
+  if (container) {
+    container.innerHTML = AUTHORIZED_USERS.map(u => `
+      <label class="team-checkbox">
+        <input type="checkbox" value="${u.email}" ${Array.isArray(t.responsaveis) && t.responsaveis.includes(u.email) ? 'checked' : ''}>
+        <span class="team-check-name">${u.name}</span>
+      </label>
+    `).join('');
+  }
 
   const hist = document.getElementById('edit-historico');
   if (t.historico && t.historico.length > 0) {
@@ -390,7 +437,12 @@ function saveEdit() {
     por:           currentUser.name
   }];
 
-  updateTaskFirebase(id, { title, date, desc, historico });
+  const editContainer = document.getElementById('edit-responsaveis');
+  const responsaveis = editContainer
+    ? Array.from(editContainer.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value)
+    : (tasks.find(x=>x.id==id)||{}).responsaveis || [];
+
+  updateTaskFirebase(id, { title, date, desc, historico, responsaveis });
   showToast('✅','Prazo atualizado','Alteração salva com sucesso.','ok');
   closeEditModal();
 }
