@@ -145,7 +145,7 @@ header {
 }
 
 .login-logo {
-  height: 1wh;
+  height: 1vh;
   width: auto;
   mix-blend-mode: screen;
   filter: brightness(1.1);
