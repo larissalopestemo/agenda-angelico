@@ -145,10 +145,8 @@ header {
 }
 
 .login-logo {
-  height: 1vh;
+  height: 48px;
   width: auto;
-  mix-blend-mode: screen;
-  filter: brightness(1.1);
   margin-bottom: 8px;
 }
 
