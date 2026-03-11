@@ -139,15 +139,14 @@ header {
   gap: 20px;
   box-shadow: 0 32px 80px rgba(0,0,0,0.4);
   animation: fadeUp 0.5s ease;
-  align-items: center;
 }
 
 .login-logo {
   height: auto;
   width: 60%;
-  max-width: 180px;
+  max-width: 220px;
   margin-bottom: 8px;
-  display: block;
+  display: flex;
 }
 
 .login-box h2 {
