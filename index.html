@@ -147,7 +147,7 @@
         </div>
         <div class="field">
           <label>Responsáveis (segure Ctrl para selecionar mais de um)</label>
-          <select id="inp-responsaveis" multiple style="min-height:90px"></select>
+          <div id="inp-responsaveis" class="checkbox-team"></div>
         </div>
         <div class="field">
           <label>Categoria</label>
@@ -253,6 +253,67 @@
       <button class="btn-ghost" onclick="closeTransferModal()">Cancelar</button>
       <button class="btn-primary" onclick="saveTransfer()">Transferir</button>
     </div>
+  </div>
+</div>
+
+<!-- =================== POPUP DETALHE =================== -->
+<div class="modal-overlay" id="detailOverlay" style="display:none" onclick="if(event.target===this)closeDetail()">
+  <div class="modal-box" style="max-width:580px">
+    <div id="detail-prio-bar" class="detail-prio-bar"></div>
+    <div class="modal-header">
+      <div class="detail-title-wrap">
+        <span id="detail-status-badge"></span>
+        <h3 id="detail-title"></h3>
+      </div>
+      <button class="modal-close" onclick="closeDetail()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="detail-grid">
+        <div class="detail-item">
+          <div class="detail-lbl">Prazo</div>
+          <div class="detail-val" id="detail-date"></div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-lbl">Tempo restante</div>
+          <div class="detail-val" id="detail-timeleft"></div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-lbl">Categoria</div>
+          <div class="detail-val" id="detail-cat"></div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-lbl">Prioridade</div>
+          <div class="detail-val" id="detail-prio"></div>
+        </div>
+        <div class="detail-item span-2">
+          <div class="detail-lbl">Assunto / Referência</div>
+          <div class="detail-val" id="detail-proc"></div>
+        </div>
+        <div class="detail-item span-2">
+          <div class="detail-lbl">Responsáveis</div>
+          <div class="detail-val" id="detail-resp"></div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-lbl">Criado por</div>
+          <div class="detail-val" id="detail-created-by"></div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-lbl">Criado em</div>
+          <div class="detail-val" id="detail-created-at"></div>
+        </div>
+      </div>
+
+      <div id="detail-desc-section" style="margin-top:18px">
+        <div class="detail-section-title">Descrição</div>
+        <div class="detail-desc" id="detail-desc"></div>
+      </div>
+
+      <div style="margin-top:18px">
+        <div class="detail-section-title">Histórico de Alterações</div>
+        <div id="detail-historico" class="historico-box"></div>
+      </div>
+    </div>
+    <div class="modal-footer" id="detail-actions"></div>
   </div>
 </div>
 

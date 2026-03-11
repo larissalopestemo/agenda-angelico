@@ -97,14 +97,14 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function populateTeamSelect() {
-  const sel = document.getElementById('inp-responsaveis');
-  if (!sel) return;
-  AUTHORIZED_USERS.forEach(u => {
-    const opt = document.createElement('option');
-    opt.value = u.email;
-    opt.textContent = u.name;
-    sel.appendChild(opt);
-  });
+  const container = document.getElementById('inp-responsaveis');
+  if (!container) return;
+  container.innerHTML = AUTHORIZED_USERS.map(u => `
+    <label class="team-checkbox">
+      <input type="checkbox" value="${u.email}">
+      <span class="team-check-name">${u.name}</span>
+    </label>
+  `).join('');
 }
 
 // =============================================
@@ -266,9 +266,11 @@ function openNewTaskModal() {
   document.getElementById('modalNewTask').style.display = 'flex';
   setDefaultDate();
   // Pre-seleciona o próprio usuário como responsável
-  const sel = document.getElementById('inp-responsaveis');
-  if (sel) {
-    Array.from(sel.options).forEach(o => { o.selected = o.value === currentUser.email; });
+  const container = document.getElementById('inp-responsaveis');
+  if (container) {
+    container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+      cb.checked = cb.value === currentUser.email;
+    });
   }
   const privField = document.getElementById('field-privado');
   if (privField) privField.style.display = currentUser.role === 'admin' ? 'flex' : 'none';
@@ -288,8 +290,10 @@ function addTask() {
   if (!title) { showToast('⚠️','Campo obrigatório','Informe o título.','warn'); return; }
   if (!date)  { showToast('⚠️','Campo obrigatório','Informe o prazo.','warn');  return; }
 
-  const sel = document.getElementById('inp-responsaveis');
-  let responsaveis = sel ? Array.from(sel.selectedOptions).map(o => o.value) : [];
+  const container = document.getElementById('inp-responsaveis');
+  let responsaveis = container
+    ? Array.from(container.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value)
+    : [];
   if (!responsaveis.includes(currentUser.email)) responsaveis.unshift(currentUser.email);
 
   const emailsRaw = document.getElementById('inp-emails').value;
@@ -323,8 +327,8 @@ function addTask() {
 
 function resetForm() {
   ['inp-title','inp-desc','inp-proc'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
-  const sel = document.getElementById('inp-responsaveis');
-  if (sel) Array.from(sel.options).forEach(o => o.selected = false);
+  const container = document.getElementById('inp-responsaveis');
+  if (container) container.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
   const priv = document.getElementById('inp-privado');
   if (priv) priv.checked = false;
   document.querySelectorAll('.prio-btn').forEach(b => b.className='prio-btn');
@@ -520,7 +524,7 @@ function renderCard(t) {
     ? `<span class="badge badge-hist" title="${t.historico.length} alteração(ões)">↺ ${t.historico.length}</span>` : '';
 
   return `
-    <div class="task-card prio-${t.prio} ${status==='overdue'?'overdue':''} ${t.done?'done':''}">
+    <div class="task-card prio-${t.prio} ${status==='overdue'?'overdue':''} ${t.done?'done':''}" onclick="openDetail('${t.id}')">
       <div class="task-info">
         <div class="task-header">
           <span class="task-title">${esc(t.title)}</span>
@@ -540,11 +544,11 @@ function renderCard(t) {
       </div>
       <div class="task-actions">
         ${canEdit?`
-          <button class="icon-btn done-btn" title="${t.done?'Reabrir':'Concluir'}" onclick="toggleDone('${t.id}')">${t.done?'↩':'✓'}</button>
-          <button class="icon-btn edit-btn" title="Editar / Estender prazo" onclick="openEditModal('${t.id}')">✎</button>
-          <button class="icon-btn transfer-btn" title="Transferir responsável" onclick="openTransferModal('${t.id}')">⇄</button>
+          <button class="icon-btn done-btn" title="${t.done?'Reabrir':'Concluir'}" onclick="event.stopPropagation();toggleDone('${t.id}')">${t.done?'↩':'✓'}</button>
+          <button class="icon-btn edit-btn" title="Editar / Estender prazo" onclick="event.stopPropagation();openEditModal('${t.id}')">✎</button>
+          <button class="icon-btn transfer-btn" title="Transferir responsável" onclick="event.stopPropagation();openTransferModal('${t.id}')">⇄</button>
         `:''}
-        ${canDelete?`<button class="icon-btn del-btn" title="Excluir" onclick="deleteTask('${t.id}')">✕</button>`:''}
+        ${canDelete?`<button class="icon-btn del-btn" title="Excluir" onclick="event.stopPropagation();deleteTask('${t.id}')">✕</button>`:''}
       </div>
     </div>`;
 }
@@ -704,6 +708,111 @@ function initClock() {
   const update = () => { if(el) el.textContent = new Date().toLocaleTimeString('pt-BR'); };
   update();
   setInterval(update, 1000);
+}
+
+
+// =============================================
+// PAINEL DE DETALHE DA TAREFA
+// =============================================
+function openDetail(id) {
+  const t = tasks.find(x => x.id == id);
+  if (!t) return;
+
+  const status   = getStatus(t);
+  const tl       = timeLeft(t);
+  const canEdit  = canEditTask(t);
+  const canDel   = currentUser.role === 'admin' || t.ownerEmail === currentUser.email;
+
+  const catLabel = {
+    email:'E-mail','prazo-marca':'Prazo Marcas',reuniao:'Reunião',outro:'Outro'
+  }[t.cat] || t.cat;
+
+  const prioLabel = { low:'Baixa', medium:'Média', high:'Alta' }[t.prio] || t.prio;
+  const prioColor = { low:'var(--ok)', medium:'var(--warn)', high:'var(--danger)' }[t.prio];
+
+  const respNames = Array.isArray(t.responsaveis)
+    ? t.responsaveis.map(e => getUserName(e)).join(', ')
+    : (t.responsaveis || '—');
+
+  // Preenche campos
+  document.getElementById('detail-title').textContent        = t.title;
+  document.getElementById('detail-status-badge').outerHTML   =
+    `<span id="detail-status-badge">${statusBadge(status)}${t.visibility==='private'?'<span class="badge badge-private">🔒 Privado</span>':''}</span>`;
+  document.getElementById('detail-date').textContent         = fmtDate(t.date);
+  const tlColor = status==='overdue' ? 'var(--danger)' : status==='today' ? 'var(--warn)' : 'var(--ok)';
+  document.getElementById('detail-timeleft').innerHTML = tl
+    ? `<span style="color:${tlColor}">${tl}</span>`
+    : '—';
+  document.getElementById('detail-cat').textContent          = catLabel;
+  document.getElementById('detail-prio').innerHTML           = `<span style="color:${prioColor};font-weight:700">${prioLabel}</span>`;
+  document.getElementById('detail-proc').textContent         = t.proc || '—';
+  document.getElementById('detail-resp').textContent         = respNames;
+  document.getElementById('detail-created-by').textContent   = t.createdBy || '—';
+  document.getElementById('detail-created-at').textContent   = t.createdAt ? fmtDate(t.createdAt) : '—';
+
+  // Barra de prioridade
+  document.getElementById('detail-prio-bar').style.background = prioColor;
+
+  // Descrição
+  const descSection = document.getElementById('detail-desc-section');
+  const descEl      = document.getElementById('detail-desc');
+  if (t.desc) {
+    descEl.textContent = t.desc;
+    descSection.style.display = 'block';
+  } else {
+    descSection.style.display = 'none';
+  }
+
+  // Histórico
+  const hist = document.getElementById('detail-historico');
+  if (t.historico && t.historico.length > 0) {
+    hist.innerHTML = t.historico.map(h => `
+      <div class="hist-item">
+        <span class="hist-date">${h.data}</span>
+        <span class="hist-msg">${esc(h.justificativa)}</span>
+        <span class="hist-by">por ${esc(h.por)}</span>
+        ${h.prazoAnterior ? `<div style="font-size:0.65rem;color:var(--muted);margin-top:3px">Prazo: ${fmtDate(h.prazoAnterior)} → ${fmtDate(h.prazoNovo)}</div>` : ''}
+      </div>`).join('');
+  } else {
+    hist.innerHTML = '<p style="color:var(--muted);font-size:0.72rem;padding:8px 0">Nenhuma alteração registrada.</p>';
+  }
+
+  // Botões de ação
+  const actions = document.getElementById('detail-actions');
+  actions.innerHTML = '';
+  if (canEdit) {
+    const btnEdit = document.createElement('button');
+    btnEdit.className = 'btn-detail-action';
+    btnEdit.innerHTML = '✎ Editar / Estender Prazo';
+    btnEdit.onclick = () => { closeDetail(); openEditModal(id); };
+    actions.appendChild(btnEdit);
+
+    const btnTransfer = document.createElement('button');
+    btnTransfer.className = 'btn-detail-action btn-detail-secondary';
+    btnTransfer.innerHTML = '⇄ Transferir Responsável';
+    btnTransfer.onclick = () => { closeDetail(); openTransferModal(id); };
+    actions.appendChild(btnTransfer);
+
+    const btnDone = document.createElement('button');
+    btnDone.className = 'btn-detail-action btn-detail-secondary';
+    btnDone.innerHTML = t.done ? '↩ Reabrir' : '✓ Marcar Concluído';
+    btnDone.onclick = () => { toggleDone(id); closeDetail(); };
+    actions.appendChild(btnDone);
+  }
+  if (canDel) {
+    const btnDel = document.createElement('button');
+    btnDel.className = 'btn-detail-action btn-detail-danger';
+    btnDel.innerHTML = '✕ Excluir';
+    btnDel.onclick = () => { closeDetail(); deleteTask(id); };
+    actions.appendChild(btnDel);
+  }
+
+  // Abre o popup
+  document.getElementById('detailOverlay').style.display = 'flex';
+}
+
+function closeDetail() {
+  document.getElementById('detailOverlay').style.display = 'none';
 }
 
 function showToast(icon, title, msg, type='info') {
