@@ -15,7 +15,6 @@
     <img src="logo_angelico.png" alt="Angélico Advogados" class="logo">
     <div class="header-right">
       <div class="user-info" id="userInfo" style="display:none">
-        <span class="user-name" id="userName"></span>
         <button class="btn-ghost" onclick="logout()">Sair</button>
       </div>
       <div class="clock" id="clock">--:--:--</div>
@@ -25,81 +24,148 @@
 
 <!-- ALERT BANNER -->
 <div class="alert-banner" id="alertBanner">
-  <span class="alert-icon">⚠</span>
+  <span>⚠</span>
   <span id="alertText"></span>
 </div>
 
-<!-- LOGIN SCREEN -->
+<!-- =================== LOGIN =================== -->
 <div class="screen" id="screenLogin">
   <div class="login-box">
     <img src="logo_angelico.png" alt="Angélico Advogados" class="login-logo">
     <h2>Agenda de Prazos</h2>
     <p class="login-sub">Acesse com seu e-mail institucional</p>
     <div class="field">
-      <label>Nome</label>
-      <input type="text" id="login-name" placeholder="Seu nome completo">
+      <label>E-mail</label>
+      <input type="email" id="login-email" placeholder="seu@anlema.com.br" onkeydown="if(event.key==='Enter')login()">
     </div>
     <div class="field">
-      <label>E-mail</label>
-      <input type="email" id="login-email" placeholder="seu@email.com.br">
+      <label>Senha</label>
+      <input type="password" id="login-password" placeholder="••••••••" onkeydown="if(event.key==='Enter')login()">
     </div>
+    <div id="login-error" class="login-error" style="display:none"></div>
     <button class="btn-primary" onclick="login()">Entrar</button>
   </div>
 </div>
 
-<!-- MAIN APP -->
+<!-- =================== APP =================== -->
 <div class="screen" id="screenApp" style="display:none">
   <div class="app-layout">
 
     <!-- SIDEBAR -->
     <aside class="sidebar">
-      <div class="sidebar-section">
-        <h3 class="section-label">Nova Tarefa</h3>
 
-        <div class="field">
-          <label>Título *</label>
-          <input type="text" id="inp-title" placeholder="Ex: E-mail - Acompanhar processo 123">
+      <!-- BOTÃO NOVA TAREFA -->
+      <button class="btn-new-task" onclick="openNewTaskModal()">
+        <span class="btn-new-icon">+</span> Nova Tarefa
+      </button>
+
+      <!-- OVERVIEW -->
+      <div class="stats-grid">
+        <div class="stat-box ok">
+          <div class="stat-num" id="stat-total">0</div>
+          <div class="stat-lbl">Ativas</div>
+        </div>
+        <div class="stat-box warn">
+          <div class="stat-num" id="stat-today">0</div>
+          <div class="stat-lbl">Hoje</div>
+        </div>
+        <div class="stat-box danger">
+          <div class="stat-num" id="stat-overdue">0</div>
+          <div class="stat-lbl">Atrasados</div>
+        </div>
+      </div>
+
+      <!-- PERFIL -->
+      <div class="profile-box">
+        <div class="profile-avatar-wrap" onclick="document.getElementById('avatarInput').click()" title="Clique para trocar a foto">
+          <img id="sidebar-avatar" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Ccircle cx='20' cy='15' r='8' fill='%238B8FC4'/%3E%3Cellipse cx='20' cy='34' rx='13' ry='8' fill='%238B8FC4'/%3E%3C/svg%3E" alt="Avatar" class="profile-avatar">
+          <div class="avatar-overlay">📷</div>
+        </div>
+        <input type="file" id="avatarInput" accept="image/*" style="display:none" onchange="handleAvatarUpload(this)">
+        <div class="profile-info">
+          <div class="profile-welcome">Bem-vindo(a),</div>
+          <div class="profile-name" id="sidebar-username">—</div>
+          <div class="profile-role" id="sidebar-role">—</div>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- MAIN -->
+    <main class="main-content">
+      <div class="toolbar">
+        <h2 class="toolbar-title">Prazos</h2>
+
+        <!-- Filtros de status -->
+        <div class="filters">
+          <button class="filter-btn active" data-filter="all"     onclick="setFilter(this)">Todos</button>
+          <button class="filter-btn"        data-filter="active"  onclick="setFilter(this)">Ativos</button>
+          <button class="filter-btn"        data-filter="overdue" onclick="setFilter(this)">Atrasados</button>
+          <button class="filter-btn"        data-filter="done"    onclick="setFilter(this)">Concluídos</button>
         </div>
 
-        <div class="field">
+        <!-- Filtros de prioridade -->
+        <div class="filters">
+          <button class="prio-filter-btn active" data-prio="all"    onclick="setPrioFilter(this)">Todas</button>
+          <button class="prio-filter-btn pf-low"  data-prio="low"   onclick="setPrioFilter(this)">Baixa</button>
+          <button class="prio-filter-btn pf-med"  data-prio="medium"onclick="setPrioFilter(this)">Média</button>
+          <button class="prio-filter-btn pf-high" data-prio="high"  onclick="setPrioFilter(this)">Alta</button>
+        </div>
+
+        <input class="search-input" type="text" id="searchInput" placeholder="Buscar..." oninput="render()">
+      </div>
+
+      <div id="taskList" class="task-list"></div>
+    </main>
+  </div>
+</div>
+
+<!-- =================== MODAL NOVA TAREFA =================== -->
+<div class="modal-overlay" id="modalNewTask" style="display:none" onclick="if(event.target===this)closeNewTaskModal()">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>Nova Tarefa</h3>
+      <button class="modal-close" onclick="closeNewTaskModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="field span-2">
+          <label>Título *</label>
+          <input type="text" id="inp-title" placeholder="Ex: E-mail — Acompanhar processo 123">
+        </div>
+        <div class="field span-2">
           <label>Descrição</label>
           <textarea id="inp-desc" placeholder="Detalhes ou observações..."></textarea>
         </div>
-
         <div class="field">
           <label>Prazo *</label>
           <input type="datetime-local" id="inp-date">
         </div>
-
         <div class="field">
-          <label>Responsável</label>
-          <input type="text" id="inp-resp" placeholder="Nome do advogado responsável">
+          <label>Assunto / Referência</label>
+          <input type="text" id="inp-proc" placeholder="Assunto ou nº do processo">
         </div>
-
         <div class="field">
-          <label>Assunto</label>
-          <input type="text" id="inp-proc" placeholder="Assunto ou referência">
+          <label>Responsáveis (segure Ctrl para selecionar mais de um)</label>
+          <select id="inp-responsaveis" multiple style="min-height:90px"></select>
         </div>
-
         <div class="field">
           <label>Categoria</label>
           <select id="inp-cat">
             <option value="email">E-mail</option>
-            <option value="prazo-marca">Prazos Marcas</option>
+            <option value="prazo-marca">Prazo Marcas</option>
             <option value="reuniao">Reunião</option>
             <option value="outro">Outro</option>
           </select>
         </div>
-
         <div class="field">
           <label>Prioridade</label>
           <div class="prio-group">
-            <button class="prio-btn active-low" data-prio="low" onclick="selectPrio(this)">Baixa</button>
-            <button class="prio-btn" data-prio="medium" onclick="selectPrio(this)">Média</button>
-            <button class="prio-btn" data-prio="high" onclick="selectPrio(this)">Alta</button>
+            <button class="prio-btn active-low"  data-prio="low"    onclick="selectPrio(this)">Baixa</button>
+            <button class="prio-btn"             data-prio="medium" onclick="selectPrio(this)">Média</button>
+            <button class="prio-btn"             data-prio="high"   onclick="selectPrio(this)">Alta</button>
           </div>
         </div>
-
         <div class="field">
           <label>Aviso por e-mail</label>
           <select id="inp-alert">
@@ -110,51 +176,87 @@
             <option value="10080">1 semana antes</option>
           </select>
         </div>
-
-        <div class="field">
+        <div class="field span-2">
           <label>Notificar e-mails (separados por vírgula)</label>
-          <input type="text" id="inp-emails" placeholder="adv1@email.com, adv2@email.com">
+          <input type="text" id="inp-emails" placeholder="email1@anlema.com.br, email2@anlema.com.br">
         </div>
-
-        <button class="btn-primary" onclick="addTask()">+ Adicionar Prazo</button>
-      </div>
-
-      <!-- STATS -->
-      <div class="stats-grid">
-        <div class="stat-box danger">
-          <div class="stat-num" id="stat-overdue">0</div>
-          <div class="stat-lbl">Atrasados</div>
-        </div>
-        <div class="stat-box warn">
-          <div class="stat-num" id="stat-today">0</div>
-          <div class="stat-lbl">Hoje</div>
-        </div>
-        <div class="stat-box ok">
-          <div class="stat-num" id="stat-total">0</div>
-          <div class="stat-lbl">Ativos</div>
+        <div class="field span-2" id="field-privado" style="display:none">
+          <label>Visibilidade</label>
+          <div class="toggle-row">
+            <input type="checkbox" id="inp-privado">
+            <span>Prazo privado — somente ADM visualiza</span>
+          </div>
         </div>
       </div>
-    </aside>
-
-    <!-- MAIN LIST -->
-    <main class="main-content">
-      <div class="toolbar">
-        <h2 class="toolbar-title">Prazos</h2>
-        <div class="filters">
-          <button class="filter-btn active" data-filter="all" onclick="setFilter(this)">Todos</button>
-          <button class="filter-btn" data-filter="active" onclick="setFilter(this)">Ativos</button>
-          <button class="filter-btn" data-filter="overdue" onclick="setFilter(this)">Atrasados</button>
-          <button class="filter-btn" data-filter="done" onclick="setFilter(this)">Concluídos</button>
-        </div>
-        <input class="search-input" type="text" id="searchInput" placeholder="Buscar prazo ou processo..." oninput="render()">
-      </div>
-
-      <div id="taskList" class="task-list"></div>
-    </main>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-ghost" onclick="closeNewTaskModal()">Cancelar</button>
+      <button class="btn-primary" onclick="addTask()">+ Adicionar Prazo</button>
+    </div>
   </div>
 </div>
 
-<!-- TOAST CONTAINER -->
+<!-- =================== MODAL EDITAR PRAZO =================== -->
+<div class="modal-overlay" id="modalEditTask" style="display:none" onclick="if(event.target===this)closeEditModal()">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>Editar / Estender Prazo</h3>
+      <button class="modal-close" onclick="closeEditModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="edit-id">
+      <div class="form-grid">
+        <div class="field span-2">
+          <label>Título</label>
+          <input type="text" id="edit-title">
+        </div>
+        <div class="field">
+          <label>Novo Prazo</label>
+          <input type="datetime-local" id="edit-date">
+        </div>
+        <div class="field">
+          <label>Descrição</label>
+          <input type="text" id="edit-desc">
+        </div>
+        <div class="field span-2">
+          <label>Justificativa da alteração *</label>
+          <textarea id="edit-justif" placeholder="Explique o motivo da alteração do prazo..." style="min-height:80px"></textarea>
+        </div>
+        <div class="field span-2">
+          <label>Histórico de alterações</label>
+          <div id="edit-historico" class="historico-box"></div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-ghost" onclick="closeEditModal()">Cancelar</button>
+      <button class="btn-primary" onclick="saveEdit()">Salvar Alteração</button>
+    </div>
+  </div>
+</div>
+
+<!-- =================== MODAL TRANSFERIR =================== -->
+<div class="modal-overlay" id="modalTransfer" style="display:none" onclick="if(event.target===this)closeTransferModal()">
+  <div class="modal-box modal-sm">
+    <div class="modal-header">
+      <h3>Transferir Responsável</h3>
+      <button class="modal-close" onclick="closeTransferModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="transfer-id">
+      <div class="field">
+        <label>Novo responsável</label>
+        <select id="transfer-resp"></select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-ghost" onclick="closeTransferModal()">Cancelar</button>
+      <button class="btn-primary" onclick="saveTransfer()">Transferir</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOASTS -->
 <div id="toastContainer" class="toast-container"></div>
 
 <script src="app.js"></script>

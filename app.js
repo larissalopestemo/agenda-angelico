@@ -1,12 +1,10 @@
 /* =============================================
    ANGÉLICO ADVOGADOS — AGENDA DE PRAZOS
-   app.js
+   app.js — v3
    ============================================= */
 
 // =============================================
 // CONFIGURAÇÃO DO FIREBASE
-// Substitua estes valores pelos do seu projeto Firebase
-// (Veja o README.md para instruções)
 // =============================================
 const FIREBASE_CONFIG = {
   apiKey:            "AIzaSyDMLC3yCK9K4zmI5LNLgevN7OTpDqm2hkY",
@@ -20,8 +18,6 @@ const FIREBASE_CONFIG = {
 
 // =============================================
 // CONFIGURAÇÃO DO EMAILJS
-// Substitua pelos seus dados do EmailJS
-// (Veja o README.md para instruções)
 // =============================================
 const EMAILJS_CONFIG = {
   serviceId:  "service_xlbb117",
@@ -30,14 +26,59 @@ const EMAILJS_CONFIG = {
 };
 
 // =============================================
-// ESTADO DA APLICAÇÃO
+// USUÁRIOS AUTORIZADOS
+// Para adicionar novos usuários, inclua um novo objeto
+// nesta lista seguindo o mesmo formato abaixo.
+// A senha padrão é angelico@13 — pode ser alterada individualmente.
+// IMPORTANTE: role 'admin' tem acesso total; role 'user' acesso restrito.
 // =============================================
-let db = null;
-let tasks = [];
-let currentUser = null;
-let selectedPrio = 'low';
-let currentFilter = 'all';
-let notifiedKeys = new Set();
+const AUTHORIZED_USERS = [
+  { name: 'Andrea',         email: 'andrea@anlema.com.br',        password: 'angelico@13', role: 'admin' },
+  { name: 'Debora Pelogi',  email: 'debora.pelogi@anlema.com.br', password: 'angelico@13', role: 'user'  },
+  { name: 'Larissa Lopes',  email: 'paralegal@anlema.com.br',     password: 'angelico@13', role: 'user'  },
+  { name: 'Thiago Prado',   email: 'thiago.prado@anlema.com.br',  password: 'angelico@13', role: 'user'  },
+  { name: 'Beatriz Amaro',  email: 'beatriz.amaro@anlema.com.br', password: 'angelico@13', role: 'user'  },
+];
+
+// =============================================
+// ESTADO
+// =============================================
+let db               = null;
+let tasks            = [];
+let currentUser      = null;
+let selectedPrio     = 'low';
+let currentFilter    = 'all';
+let currentPrioFilter = 'all';
+let notifiedKeys     = new Set();
+
+// =============================================
+// HELPERS
+// =============================================
+function isAdmin(email) {
+  const u = AUTHORIZED_USERS.find(x => x.email === (email||'').toLowerCase().trim());
+  return u && u.role === 'admin';
+}
+
+function canViewTask(task) {
+  if (!currentUser) return false;
+  if (currentUser.role === 'admin') return true;
+  if (task.ownerEmail === currentUser.email) return true;
+  if (Array.isArray(task.responsaveis) && task.responsaveis.includes(currentUser.email)) return true;
+  return false;
+}
+
+function canEditTask(task) {
+  if (!currentUser) return false;
+  if (currentUser.role === 'admin') return true;
+  if (task.ownerEmail === currentUser.email) return true;
+  if (Array.isArray(task.responsaveis) && task.responsaveis.includes(currentUser.email)) return true;
+  return false;
+}
+
+function getUserName(email) {
+  const u = AUTHORIZED_USERS.find(x => x.email === email);
+  return u ? u.name : email;
+}
 
 // =============================================
 // INICIALIZAÇÃO
@@ -45,63 +86,61 @@ let notifiedKeys = new Set();
 document.addEventListener('DOMContentLoaded', () => {
   initFirebase();
   initClock();
-  setDefaultDate();
 
-  // Verifica se há usuário salvo na sessão
   const saved = sessionStorage.getItem('angelico-user');
   if (saved) {
     currentUser = JSON.parse(saved);
     showApp();
   }
+
+  populateTeamSelect();
 });
 
+function populateTeamSelect() {
+  const sel = document.getElementById('inp-responsaveis');
+  if (!sel) return;
+  AUTHORIZED_USERS.forEach(u => {
+    const opt = document.createElement('option');
+    opt.value = u.email;
+    opt.textContent = u.name;
+    sel.appendChild(opt);
+  });
+}
+
+// =============================================
+// FIREBASE
+// =============================================
 function initFirebase() {
-  // Carrega o SDK do Firebase dinamicamente
   const scripts = [
     'https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js',
     'https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js'
   ];
-
   let loaded = 0;
   scripts.forEach(src => {
     const s = document.createElement('script');
     s.src = src;
-    s.onload = () => {
-      loaded++;
-      if (loaded === scripts.length) connectFirebase();
-    };
+    s.onload = () => { if (++loaded === scripts.length) connectFirebase(); };
     document.head.appendChild(s);
   });
 }
 
 function connectFirebase() {
   try {
-    if (FIREBASE_CONFIG.apiKey === "COLE_AQUI_SUA_API_KEY") {
-      console.warn("Firebase não configurado — usando modo local.");
-      loadLocalTasks();
-      return;
-    }
     firebase.initializeApp(FIREBASE_CONFIG);
     db = firebase.database();
-    listenTasks();
-  } catch (e) {
-    console.warn("Erro Firebase, usando modo local:", e);
+    if (currentUser) listenTasks();
+  } catch(e) {
+    console.warn('Firebase erro:', e);
     loadLocalTasks();
   }
 }
 
-// =============================================
-// FIREBASE — TAREFAS EM TEMPO REAL
-// =============================================
 function listenTasks() {
-  if (!db) return;
+  if (!db) { loadLocalTasks(); return; }
   db.ref('tasks').on('value', snapshot => {
     tasks = [];
-    snapshot.forEach(child => {
-      tasks.push({ id: child.key, ...child.val() });
-    });
-    // Ordena por data
-    tasks.sort((a, b) => new Date(a.date) - new Date(b.date));
+    snapshot.forEach(child => tasks.push({ id: child.key, ...child.val() }));
+    tasks.sort((a,b) => new Date(a.date) - new Date(b.date));
     render();
     checkAlerts();
   });
@@ -116,74 +155,128 @@ function saveTaskFirebase(task) {
 
 function updateTaskFirebase(id, data) {
   if (!db) { updateLocalTask(id, data); return; }
-  db.ref('tasks/' + id).update(data);
+  db.ref('tasks/'+id).update(data);
 }
 
 function deleteTaskFirebase(id) {
   if (!db) { deleteLocalTask(id); return; }
-  db.ref('tasks/' + id).remove();
+  db.ref('tasks/'+id).remove();
 }
 
 // =============================================
-// FALLBACK — MODO LOCAL (sem Firebase)
+// FALLBACK LOCAL
 // =============================================
 function loadLocalTasks() {
-  tasks = JSON.parse(localStorage.getItem('angelico-tasks') || '[]');
-  notifiedKeys = new Set(JSON.parse(localStorage.getItem('angelico-notified') || '[]'));
-  render();
-  checkAlerts();
+  tasks = JSON.parse(localStorage.getItem('angelico-tasks')||'[]');
+  notifiedKeys = new Set(JSON.parse(localStorage.getItem('angelico-notified')||'[]'));
+  render(); checkAlerts();
 }
-
 function saveLocalTask(task) {
   task.id = Date.now().toString();
   tasks.unshift(task);
   localStorage.setItem('angelico-tasks', JSON.stringify(tasks));
   render();
 }
-
 function updateLocalTask(id, data) {
-  const t = tasks.find(x => x.id == id);
+  const t = tasks.find(x => x.id==id);
   if (t) Object.assign(t, data);
   localStorage.setItem('angelico-tasks', JSON.stringify(tasks));
   render();
 }
-
 function deleteLocalTask(id) {
-  tasks = tasks.filter(x => x.id != id);
+  tasks = tasks.filter(x => x.id!=id);
   localStorage.setItem('angelico-tasks', JSON.stringify(tasks));
   render();
 }
 
 // =============================================
-// LOGIN
+// LOGIN / LOGOUT
 // =============================================
 function login() {
-  const name  = document.getElementById('login-name').value.trim();
-  const email = document.getElementById('login-email').value.trim();
-  if (!name)  { showToast('⚠️', 'Campo obrigatório', 'Informe seu nome.', 'warn'); return; }
-  if (!email) { showToast('⚠️', 'Campo obrigatório', 'Informe seu e-mail.', 'warn'); return; }
-  if (!email.includes('@')) { showToast('⚠️', 'E-mail inválido', 'Informe um e-mail válido.', 'warn'); return; }
+  const email    = document.getElementById('login-email').value.trim().toLowerCase();
+  const password = document.getElementById('login-password').value;
+  const user     = AUTHORIZED_USERS.find(u => u.email === email);
 
-  currentUser = { name, email };
+  if (!user) { showLoginError('E-mail não autorizado. Solicite acesso ao administrador.'); return; }
+  if (user.password !== password) { showLoginError('Senha incorreta.'); return; }
+
+  currentUser = { name: user.name, email: user.email, role: user.role };
   sessionStorage.setItem('angelico-user', JSON.stringify(currentUser));
+  document.getElementById('login-error').style.display = 'none';
   showApp();
+  if (db) listenTasks(); else loadLocalTasks();
+}
+
+function showLoginError(msg) {
+  const el = document.getElementById('login-error');
+  el.textContent = msg;
+  el.style.display = 'block';
 }
 
 function logout() {
   currentUser = null;
   sessionStorage.removeItem('angelico-user');
   document.getElementById('screenLogin').style.display = 'flex';
-  document.getElementById('screenApp').style.display = 'none';
-  document.getElementById('userInfo').style.display = 'none';
+  document.getElementById('screenApp').style.display   = 'none';
+  document.getElementById('login-email').value    = '';
+  document.getElementById('login-password').value = '';
 }
 
 function showApp() {
   document.getElementById('screenLogin').style.display = 'none';
-  document.getElementById('screenApp').style.display = 'block';
-  document.getElementById('userInfo').style.display = 'flex';
-  document.getElementById('userName').textContent = currentUser.name;
-  // Pré-preenche o campo de e-mail de notificação
-  document.getElementById('inp-emails').value = currentUser.email;
+  document.getElementById('screenApp').style.display   = 'block';
+  updateSidebarProfile();
+  const el = document.getElementById('inp-emails');
+  if (el) el.value = currentUser.email;
+  const privField = document.getElementById('field-privado');
+  if (privField) privField.style.display = currentUser.role === 'admin' ? 'flex' : 'none';
+}
+
+// =============================================
+// PERFIL SIDEBAR
+// =============================================
+function updateSidebarProfile() {
+  const nameEl   = document.getElementById('sidebar-username');
+  const roleEl   = document.getElementById('sidebar-role');
+  const avatarEl = document.getElementById('sidebar-avatar');
+  if (nameEl) nameEl.textContent = currentUser.name;
+  if (roleEl) roleEl.textContent = currentUser.role === 'admin' ? 'Administrador' : 'Usuário';
+  const saved = localStorage.getItem('avatar-' + currentUser.email);
+  if (avatarEl && saved) avatarEl.src = saved;
+  updateStats();
+}
+
+function handleAvatarUpload(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const data = e.target.result;
+    localStorage.setItem('avatar-' + currentUser.email, data);
+    const avatarEl = document.getElementById('sidebar-avatar');
+    if (avatarEl) avatarEl.src = data;
+  };
+  reader.readAsDataURL(file);
+}
+
+// =============================================
+// MODAL NOVA TAREFA
+// =============================================
+function openNewTaskModal() {
+  document.getElementById('modalNewTask').style.display = 'flex';
+  setDefaultDate();
+  // Pre-seleciona o próprio usuário como responsável
+  const sel = document.getElementById('inp-responsaveis');
+  if (sel) {
+    Array.from(sel.options).forEach(o => { o.selected = o.value === currentUser.email; });
+  }
+  const privField = document.getElementById('field-privado');
+  if (privField) privField.style.display = currentUser.role === 'admin' ? 'flex' : 'none';
+}
+
+function closeNewTaskModal() {
+  document.getElementById('modalNewTask').style.display = 'none';
+  resetForm();
 }
 
 // =============================================
@@ -192,56 +285,167 @@ function showApp() {
 function addTask() {
   const title = document.getElementById('inp-title').value.trim();
   const date  = document.getElementById('inp-date').value;
-  if (!title) { showToast('⚠️', 'Campo obrigatório', 'Informe o título do prazo.', 'warn'); return; }
-  if (!date)  { showToast('⚠️', 'Campo obrigatório', 'Informe a data do prazo.', 'warn');  return; }
+  if (!title) { showToast('⚠️','Campo obrigatório','Informe o título.','warn'); return; }
+  if (!date)  { showToast('⚠️','Campo obrigatório','Informe o prazo.','warn');  return; }
+
+  const sel = document.getElementById('inp-responsaveis');
+  let responsaveis = sel ? Array.from(sel.selectedOptions).map(o => o.value) : [];
+  if (!responsaveis.includes(currentUser.email)) responsaveis.unshift(currentUser.email);
 
   const emailsRaw = document.getElementById('inp-emails').value;
   const emails = emailsRaw.split(',').map(e => e.trim()).filter(Boolean);
 
+  const privCheck = document.getElementById('inp-privado');
+  const visibility = (currentUser.role === 'admin' && privCheck && privCheck.checked) ? 'private' : 'shared';
+
   const task = {
     title,
-    desc:      document.getElementById('inp-desc').value.trim(),
+    desc:        document.getElementById('inp-desc').value.trim(),
     date,
-    resp:      document.getElementById('inp-resp').value.trim(),
-    proc:      document.getElementById('inp-proc').value.trim(),
-    cat:       document.getElementById('inp-cat').value,
-    prio:      selectedPrio,
-    alertMin:  parseInt(document.getElementById('inp-alert').value),
+    responsaveis,
+    proc:        document.getElementById('inp-proc').value.trim(),
+    cat:         document.getElementById('inp-cat').value,
+    prio:        selectedPrio,
+    alertMin:    parseInt(document.getElementById('inp-alert').value),
     emails,
-    done:      false,
-    createdBy: currentUser ? currentUser.name : 'Sistema',
-    createdAt: new Date().toISOString()
+    visibility,
+    ownerEmail:  currentUser.email,
+    done:        false,
+    createdBy:   currentUser.name,
+    createdAt:   new Date().toISOString(),
+    historico:   []
   };
 
   saveTaskFirebase(task);
-  showToast('✅', 'Prazo adicionado', `"${title}" cadastrado para ${fmtDate(date)}.`, 'ok');
-  resetForm();
+  showToast('✅','Prazo adicionado',`"${title}" cadastrado para ${fmtDate(date)}.`,'ok');
+  closeNewTaskModal();
 }
 
 function resetForm() {
-  document.getElementById('inp-title').value = '';
-  document.getElementById('inp-desc').value = '';
-  document.getElementById('inp-resp').value = '';
-  document.getElementById('inp-proc').value = '';
-  setDefaultDate();
+  ['inp-title','inp-desc','inp-proc'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+  const sel = document.getElementById('inp-responsaveis');
+  if (sel) Array.from(sel.options).forEach(o => o.selected = false);
+  const priv = document.getElementById('inp-privado');
+  if (priv) priv.checked = false;
+  document.querySelectorAll('.prio-btn').forEach(b => b.className='prio-btn');
+  const low = document.querySelector('.prio-btn[data-prio="low"]');
+  if (low) low.classList.add('active-low');
+  selectedPrio = 'low';
 }
 
 // =============================================
-// TOGGLE CONCLUÍDO / EXCLUIR
+// EDITAR / ESTENDER PRAZO
+// =============================================
+function openEditModal(id) {
+  const t = tasks.find(x => x.id==id);
+  if (!t || !canEditTask(t)) return;
+
+  document.getElementById('edit-id').value    = id;
+  document.getElementById('edit-title').value = t.title;
+  document.getElementById('edit-date').value  = t.date;
+  document.getElementById('edit-desc').value  = t.desc || '';
+  document.getElementById('edit-justif').value = '';
+
+  const hist = document.getElementById('edit-historico');
+  if (t.historico && t.historico.length > 0) {
+    hist.innerHTML = t.historico.map(h =>
+      `<div class="hist-item">
+        <span class="hist-date">${h.data}</span>
+        <span class="hist-msg">${esc(h.justificativa)}</span>
+        <span class="hist-by">por ${esc(h.por)}</span>
+      </div>`
+    ).join('');
+  } else {
+    hist.innerHTML = '<p style="color:var(--muted);font-size:0.72rem;padding:8px 0">Nenhuma alteração anterior.</p>';
+  }
+
+  document.getElementById('modalEditTask').style.display = 'flex';
+}
+
+function closeEditModal() {
+  document.getElementById('modalEditTask').style.display = 'none';
+}
+
+function saveEdit() {
+  const id    = document.getElementById('edit-id').value;
+  const title = document.getElementById('edit-title').value.trim();
+  const date  = document.getElementById('edit-date').value;
+  const desc  = document.getElementById('edit-desc').value.trim();
+  const justif= document.getElementById('edit-justif').value.trim();
+
+  if (!title)  { showToast('⚠️','Obrigatório','Informe o título.','warn'); return; }
+  if (!date)   { showToast('⚠️','Obrigatório','Informe o prazo.','warn');  return; }
+  if (!justif) { showToast('⚠️','Justificativa obrigatória','Explique o motivo da alteração.','warn'); return; }
+
+  const t = tasks.find(x => x.id==id);
+  const historico = [...(t.historico||[]), {
+    data:          fmtDate(new Date().toISOString()),
+    prazoAnterior: t.date,
+    prazoNovo:     date,
+    justificativa: justif,
+    por:           currentUser.name
+  }];
+
+  updateTaskFirebase(id, { title, date, desc, historico });
+  showToast('✅','Prazo atualizado','Alteração salva com sucesso.','ok');
+  closeEditModal();
+}
+
+// =============================================
+// TRANSFERIR RESPONSÁVEL
+// =============================================
+function openTransferModal(id) {
+  const t = tasks.find(x => x.id==id);
+  if (!t || !canEditTask(t)) return;
+  document.getElementById('transfer-id').value = id;
+
+  const sel = document.getElementById('transfer-resp');
+  sel.innerHTML = '';
+  AUTHORIZED_USERS.forEach(u => {
+    const opt = document.createElement('option');
+    opt.value = u.email;
+    opt.textContent = u.name;
+    if (t.ownerEmail === u.email) opt.selected = true;
+    sel.appendChild(opt);
+  });
+
+  document.getElementById('modalTransfer').style.display = 'flex';
+}
+
+function closeTransferModal() {
+  document.getElementById('modalTransfer').style.display = 'none';
+}
+
+function saveTransfer() {
+  const id    = document.getElementById('transfer-id').value;
+  const email = document.getElementById('transfer-resp').value;
+  updateTaskFirebase(id, { ownerEmail: email, responsaveis: [email] });
+  showToast('✅','Transferido',`Demanda transferida para ${getUserName(email)}.`,'ok');
+  closeTransferModal();
+}
+
+// =============================================
+// AÇÕES NOS CARDS
 // =============================================
 function toggleDone(id) {
-  const t = tasks.find(x => x.id == id);
-  if (!t) return;
+  const t = tasks.find(x => x.id==id);
+  if (!t || !canEditTask(t)) return;
   updateTaskFirebase(id, { done: !t.done });
 }
 
 function deleteTask(id) {
-  if (!confirm('Excluir este prazo?')) return;
+  const t = tasks.find(x => x.id==id);
+  if (!t) return;
+  if (currentUser.role !== 'admin' && t.ownerEmail !== currentUser.email) {
+    showToast('🚫','Sem permissão','Apenas o criador ou ADM pode excluir.','warn');
+    return;
+  }
+  if (!confirm('Excluir este prazo permanentemente?')) return;
   deleteTaskFirebase(id);
 }
 
 // =============================================
-// FILTRO E BUSCA
+// FILTROS
 // =============================================
 function setFilter(btn) {
   document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
@@ -250,141 +454,144 @@ function setFilter(btn) {
   render();
 }
 
+function setPrioFilter(btn) {
+  document.querySelectorAll('.prio-filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentPrioFilter = btn.dataset.prio;
+  render();
+}
+
 function selectPrio(btn) {
-  document.querySelectorAll('.prio-btn').forEach(b => b.className = 'prio-btn');
+  document.querySelectorAll('.prio-btn').forEach(b => b.className='prio-btn');
   selectedPrio = btn.dataset.prio;
-  btn.classList.add('active-' + selectedPrio);
+  btn.classList.add('active-'+selectedPrio);
 }
 
 // =============================================
 // RENDER
 // =============================================
 function render() {
-  const list   = document.getElementById('taskList');
-  const search = (document.getElementById('searchInput')?.value || '').toLowerCase();
+  const list = document.getElementById('taskList');
+  if (!list || !currentUser) return;
+  const search = (document.getElementById('searchInput')?.value||'').toLowerCase();
 
-  let filtered = [...tasks];
+  let filtered = tasks.filter(t => canViewTask(t));
 
-  // Filtro de status
   if (currentFilter === 'active')  filtered = filtered.filter(t => !t.done);
   if (currentFilter === 'overdue') filtered = filtered.filter(t => !t.done && new Date(t.date) < new Date());
   if (currentFilter === 'done')    filtered = filtered.filter(t => t.done);
+  if (currentPrioFilter !== 'all') filtered = filtered.filter(t => t.prio === currentPrioFilter);
 
-  // Busca por texto
   if (search) {
     filtered = filtered.filter(t =>
       t.title.toLowerCase().includes(search) ||
-      (t.proc  && t.proc.toLowerCase().includes(search))  ||
-      (t.resp  && t.resp.toLowerCase().includes(search))  ||
-      (t.desc  && t.desc.toLowerCase().includes(search))
+      (t.proc && t.proc.toLowerCase().includes(search)) ||
+      (t.desc && t.desc.toLowerCase().includes(search))
     );
   }
 
-  // Ordenação: atrasados primeiro, depois por data
-  filtered.sort((a, b) => {
+  filtered.sort((a,b) => {
     if (a.done !== b.done) return a.done ? 1 : -1;
     return new Date(a.date) - new Date(b.date);
   });
 
-  if (filtered.length === 0) {
-    list.innerHTML = `
-      <div class="empty-state">
-        <div class="icon">⚖</div>
-        <p>Nenhum prazo encontrado.</p>
-      </div>`;
-  } else {
-    list.innerHTML = filtered.map(t => renderCard(t)).join('');
-  }
+  list.innerHTML = filtered.length === 0
+    ? `<div class="empty-state"><div class="icon">⚖</div><p>Nenhum prazo encontrado.</p></div>`
+    : filtered.map(renderCard).join('');
 
-  // Atualiza stats
-  const active = tasks.filter(t => !t.done);
-  const now = new Date();
-  document.getElementById('stat-overdue').textContent = active.filter(t => new Date(t.date) < now).length;
-  document.getElementById('stat-today').textContent   = active.filter(t => {
-    const d = new Date(t.date) - now;
-    return d >= 0 && d < 86400000;
-  }).length;
-  document.getElementById('stat-total').textContent = active.length;
-
-  // Banner de atraso
-  const overdueCount = active.filter(t => new Date(t.date) < now).length;
-  const banner = document.getElementById('alertBanner');
-  if (overdueCount > 0) {
-    document.getElementById('alertText').textContent =
-      `${overdueCount} prazo${overdueCount > 1 ? 's' : ''} em atraso! Verifique imediatamente.`;
-    banner.classList.add('show');
-  } else {
-    banner.classList.remove('show');
-  }
+  updateStats();
 }
 
 function renderCard(t) {
-  const status = getStatus(t);
-  const tl = timeLeft(t);
+  const status    = getStatus(t);
+  const tl        = timeLeft(t);
+  const canEdit   = canEditTask(t);
+  const canDelete = currentUser.role === 'admin' || t.ownerEmail === currentUser.email;
+
+  const respNames = Array.isArray(t.responsaveis)
+    ? t.responsaveis.map(e => getUserName(e)).join(', ')
+    : '';
+
   const catLabel = {
-    peticao:'Petição', audiencia:'Audiência', recurso:'Recurso',
-    prazo_fatal:'Prazo Fatal', protocolo:'Protocolo',
-    reuniao:'Reunião', pagamento:'Pagamento', outro:'Outro'
+    email:'E-mail','prazo-marca':'Prazo Marcas',reuniao:'Reunião',outro:'Outro'
   }[t.cat] || t.cat;
 
+  const histBadge = t.historico && t.historico.length > 0
+    ? `<span class="badge badge-hist" title="${t.historico.length} alteração(ões)">↺ ${t.historico.length}</span>` : '';
+
   return `
-    <div class="task-card prio-${t.prio} ${status === 'overdue' ? 'overdue' : ''} ${t.done ? 'done' : ''}">
+    <div class="task-card prio-${t.prio} ${status==='overdue'?'overdue':''} ${t.done?'done':''}">
       <div class="task-info">
         <div class="task-header">
           <span class="task-title">${esc(t.title)}</span>
           ${statusBadge(status)}
+          ${t.visibility==='private'?'<span class="badge badge-private">🔒 Privado</span>':''}
+          ${histBadge}
         </div>
-        ${t.desc ? `<div class="task-desc">${esc(t.desc)}</div>` : ''}
+        ${t.desc?`<div class="task-desc">${esc(t.desc)}</div>`:''}
         <div class="task-meta">
           <span>📁 ${catLabel}</span>
           <span>📅 ${fmtDate(t.date)}</span>
-          ${tl ? `<span class="highlight">→ ${tl}</span>` : ''}
-          ${t.proc ? `<span>⚖ ${esc(t.proc)}</span>` : ''}
-          ${t.resp ? `<span>👤 ${esc(t.resp)}</span>` : ''}
-          ${t.createdBy ? `<span>✍ ${esc(t.createdBy)}</span>` : ''}
+          ${tl?`<span class="highlight">→ ${tl}</span>`:''}
+          ${t.proc?`<span>📎 ${esc(t.proc)}</span>`:''}
+          ${respNames?`<span>👥 ${esc(respNames)}</span>`:''}
+          <span>✍ ${esc(t.createdBy||'')}</span>
         </div>
       </div>
       <div class="task-actions">
-        <button class="icon-btn done-btn" title="${t.done ? 'Reabrir' : 'Concluir'}" onclick="toggleDone('${t.id}')">
-          ${t.done ? '↩' : '✓'}
-        </button>
-        <button class="icon-btn del-btn" title="Excluir" onclick="deleteTask('${t.id}')">✕</button>
+        ${canEdit?`
+          <button class="icon-btn done-btn" title="${t.done?'Reabrir':'Concluir'}" onclick="toggleDone('${t.id}')">${t.done?'↩':'✓'}</button>
+          <button class="icon-btn edit-btn" title="Editar / Estender prazo" onclick="openEditModal('${t.id}')">✎</button>
+          <button class="icon-btn transfer-btn" title="Transferir responsável" onclick="openTransferModal('${t.id}')">⇄</button>
+        `:''}
+        ${canDelete?`<button class="icon-btn del-btn" title="Excluir" onclick="deleteTask('${t.id}')">✕</button>`:''}
       </div>
-    </div>
-  `;
+    </div>`;
 }
 
 // =============================================
-// VERIFICAR ALERTAS E ENVIAR E-MAIL
+// STATS
+// =============================================
+function updateStats() {
+  const now   = new Date();
+  const mine  = tasks.filter(t => canViewTask(t) && !t.done);
+  const over  = mine.filter(t => new Date(t.date) < now).length;
+  const today = mine.filter(t => { const d=new Date(t.date)-now; return d>=0&&d<86400000; }).length;
+  const total = mine.length;
+  const el = (id,v) => { const e=document.getElementById(id); if(e) e.textContent=v; };
+  el('stat-overdue',over); el('stat-today',today); el('stat-total',total);
+
+  const banner = document.getElementById('alertBanner');
+  if (banner) {
+    if (over > 0) {
+      document.getElementById('alertText').textContent = `${over} prazo${over>1?'s':''} em atraso!`;
+      banner.classList.add('show');
+    } else banner.classList.remove('show');
+  }
+}
+
+// =============================================
+// ALERTAS
 // =============================================
 function checkAlerts() {
   const now = new Date();
-  tasks.forEach(t => {
+  tasks.filter(t => canViewTask(t)).forEach(t => {
     if (t.done) return;
+    const deadline = new Date(t.date);
+    const alertKey = t.id+'-alert', overdueKey = t.id+'-overdue';
 
-    const deadline   = new Date(t.date);
-    const alertKey   = t.id + '-alert';
-    const overdueKey = t.id + '-overdue';
-
-    // Aviso antecipado
     if (t.alertMin > 0 && !notifiedKeys.has(alertKey)) {
-      const alertTime = new Date(deadline - t.alertMin * 60000);
+      const alertTime = new Date(deadline - t.alertMin*60000);
       if (now >= alertTime && now < deadline) {
-        const mins = Math.round((deadline - now) / 60000);
-        const msg  = mins >= 60 ? `${Math.round(mins/60)}h restantes` : `${mins}min restantes`;
-        showToast('🔔', `Prazo se aproximando`, `${t.title} — ${msg}`, 'warn');
-        notifiedKeys.add(alertKey);
-        saveNotified();
-        sendEmailAlert(t, msg);
+        const mins = Math.round((deadline-now)/60000);
+        const msg = mins>=60?`${Math.round(mins/60)}h restantes`:`${mins}min restantes`;
+        showToast('🔔','Prazo se aproximando',`${t.title} — ${msg}`,'warn');
+        notifiedKeys.add(alertKey); saveNotified(); sendEmailAlert(t, msg);
       }
     }
-
-    // Prazo vencido
     if (!notifiedKeys.has(overdueKey) && now > deadline) {
-      showToast('🚨', `Prazo vencido!`, `${t.title} — venceu em ${fmtDate(t.date)}`, 'danger');
-      notifiedKeys.add(overdueKey);
-      saveNotified();
-      sendEmailOverdue(t);
+      showToast('🚨','Prazo vencido!',`${t.title} — venceu em ${fmtDate(t.date)}`,'danger');
+      notifiedKeys.add(overdueKey); saveNotified(); sendEmailOverdue(t);
     }
   });
 }
@@ -394,68 +601,51 @@ function saveNotified() {
 }
 
 // =============================================
-// ENVIO DE E-MAIL VIA EMAILJS
+// EMAILJS
 // =============================================
 function loadEmailJS() {
   if (window.emailjs) return Promise.resolve();
-  return new Promise((resolve) => {
+  return new Promise(resolve => {
     const s = document.createElement('script');
     s.src = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js';
-    s.onload = () => {
-      emailjs.init(EMAILJS_CONFIG.publicKey);
-      resolve();
-    };
+    s.onload = () => { emailjs.init(EMAILJS_CONFIG.publicKey); resolve(); };
     document.head.appendChild(s);
   });
 }
 
 async function sendEmailAlert(task, timeMsg) {
-  if (EMAILJS_CONFIG.publicKey === "COLE_AQUI_PUBLIC_KEY") return; // Não configurado
-  if (!task.emails || task.emails.length === 0) return;
-
+  if (!task.emails||task.emails.length===0) return;
   await loadEmailJS();
-
   for (const email of task.emails) {
     try {
       await emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateId, {
-        to_email:  email,
-        to_name:   task.resp || 'Equipe',
-        subject:   `⏰ Prazo se aproximando: ${task.title}`,
-        task_name: task.title,
-        task_date: fmtDate(task.date),
-        task_proc: task.proc || '—',
-        task_resp: task.resp || '—',
-        time_msg:  timeMsg,
-        message:   `O prazo "${task.title}" vence em ${fmtDate(task.date)} (${timeMsg}).`
+        to_email: email, to_name: getUserName(email),
+        subject: `⏰ Prazo se aproximando: ${task.title}`,
+        task_name: task.title, task_date: fmtDate(task.date),
+        task_proc: task.proc||'—',
+        task_resp: Array.isArray(task.responsaveis)?task.responsaveis.map(getUserName).join(', '):'—',
+        time_msg: timeMsg,
+        message: `O prazo "${task.title}" vence em ${fmtDate(task.date)} (${timeMsg}).`
       });
-    } catch (e) {
-      console.warn('Erro ao enviar e-mail:', e);
-    }
+    } catch(e) { console.warn('E-mail erro:',e); }
   }
 }
 
 async function sendEmailOverdue(task) {
-  if (EMAILJS_CONFIG.publicKey === "COLE_AQUI_PUBLIC_KEY") return;
-  if (!task.emails || task.emails.length === 0) return;
-
+  if (!task.emails||task.emails.length===0) return;
   await loadEmailJS();
-
   for (const email of task.emails) {
     try {
       await emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateId, {
-        to_email:  email,
-        to_name:   task.resp || 'Equipe',
-        subject:   `🚨 PRAZO VENCIDO: ${task.title}`,
-        task_name: task.title,
-        task_date: fmtDate(task.date),
-        task_proc: task.proc || '—',
-        task_resp: task.resp || '—',
-        time_msg:  'PRAZO VENCIDO',
-        message:   `ATENÇÃO: O prazo "${task.title}" venceu em ${fmtDate(task.date)} e ainda não foi concluído!`
+        to_email: email, to_name: getUserName(email),
+        subject: `🚨 PRAZO VENCIDO: ${task.title}`,
+        task_name: task.title, task_date: fmtDate(task.date),
+        task_proc: task.proc||'—',
+        task_resp: Array.isArray(task.responsaveis)?task.responsaveis.map(getUserName).join(', '):'—',
+        time_msg: 'PRAZO VENCIDO',
+        message: `ATENÇÃO: O prazo "${task.title}" venceu em ${fmtDate(task.date)} e não foi concluído!`
       });
-    } catch (e) {
-      console.warn('Erro ao enviar e-mail:', e);
-    }
+    } catch(e) { console.warn('E-mail erro:',e); }
   }
 }
 
@@ -466,82 +656,63 @@ function getStatus(task) {
   if (task.done) return 'done';
   const diff = new Date(task.date) - new Date();
   if (diff < 0) return 'overdue';
-  if (diff < 86400000)  return 'today'; // < 1 dia
-  if (diff < 259200000) return 'soon';  // < 3 dias
+  if (diff < 86400000)  return 'today';
+  if (diff < 259200000) return 'soon';
   return 'ok';
 }
 
 function statusBadge(status) {
   const map = {
-    overdue: ['badge-overdue', '⚑ Atrasado'],
-    today:   ['badge-today',   '◉ Hoje'],
-    soon:    ['badge-soon',    '◎ Em breve'],
-    ok:      ['badge-ok',      '○ No prazo'],
-    done:    ['badge-done',    '✓ Concluído'],
+    overdue:['badge-overdue','⚑ Atrasado'], today:['badge-today','◉ Hoje'],
+    soon:['badge-soon','◎ Em breve'], ok:['badge-ok','○ No prazo'], done:['badge-done','✓ Concluído']
   };
-  const [cls, lbl] = map[status];
+  const [cls,lbl] = map[status];
   return `<span class="badge ${cls}">${lbl}</span>`;
 }
 
 function fmtDate(d) {
-  return new Date(d).toLocaleString('pt-BR', {
-    day:'2-digit', month:'2-digit', year:'numeric',
-    hour:'2-digit', minute:'2-digit'
-  });
+  return new Date(d).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
 }
 
 function timeLeft(task) {
   if (task.done) return '';
   const diff = new Date(task.date) - new Date();
   if (diff < 0) {
-    const abs = Math.abs(diff);
-    const h   = Math.floor(abs / 3600000);
-    const m   = Math.floor((abs % 3600000) / 60000);
-    return h > 48 ? `${Math.floor(h/24)}d atrás` : h > 0 ? `${h}h ${m}m atrás` : `${m}m atrás`;
+    const abs=Math.abs(diff), h=Math.floor(abs/3600000), m=Math.floor((abs%3600000)/60000);
+    return h>48?`${Math.floor(h/24)}d atrás`:h>0?`${h}h ${m}m atrás`:`${m}m atrás`;
   }
-  const h = Math.floor(diff / 3600000);
-  const m = Math.floor((diff % 3600000) / 60000);
-  return h > 48 ? `em ${Math.floor(h/24)}d` : h > 0 ? `em ${h}h ${m}m` : `em ${m}m`;
+  const h=Math.floor(diff/3600000), m=Math.floor((diff%3600000)/60000);
+  return h>48?`em ${Math.floor(h/24)}d`:h>0?`em ${h}h ${m}m`:`em ${m}m`;
 }
 
 function esc(s) {
   if (!s) return '';
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 function setDefaultDate() {
+  const el = document.getElementById('inp-date');
+  if (!el) return;
   const d = new Date();
-  d.setDate(d.getDate() + 1);
-  d.setHours(18, 0, 0, 0);
-  document.getElementById('inp-date').value = d.toISOString().slice(0, 16);
+  d.setDate(d.getDate()+1);
+  d.setHours(18,0,0,0);
+  el.value = d.toISOString().slice(0,16);
 }
 
 function initClock() {
   const el = document.getElementById('clock');
-  const update = () => el.textContent = new Date().toLocaleTimeString('pt-BR');
+  const update = () => { if(el) el.textContent = new Date().toLocaleTimeString('pt-BR'); };
   update();
   setInterval(update, 1000);
 }
 
-// =============================================
-// TOAST NOTIFICATIONS
-// =============================================
-function showToast(icon, title, msg, type = 'info') {
+function showToast(icon, title, msg, type='info') {
   const c = document.getElementById('toastContainer');
   const t = document.createElement('div');
   t.className = `toast toast-${type}`;
-  t.innerHTML = `
-    <div class="toast-icon">${icon}</div>
-    <div>
-      <div class="toast-title">${title}</div>
-      <div class="toast-msg">${msg}</div>
-    </div>`;
+  t.innerHTML = `<div class="toast-icon">${icon}</div><div><div class="toast-title">${title}</div><div class="toast-msg">${msg}</div></div>`;
   c.appendChild(t);
-  setTimeout(() => {
-    t.style.animation = 'toastOut 0.3s ease forwards';
-    setTimeout(() => t.remove(), 300);
-  }, 5000);
+  setTimeout(() => { t.style.animation='toastOut 0.3s ease forwards'; setTimeout(()=>t.remove(),300); }, 5000);
 }
 
-// Verifica alertas a cada 60 segundos
 setInterval(checkAlerts, 60000);
