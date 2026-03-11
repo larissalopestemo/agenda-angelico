@@ -142,8 +142,9 @@ header {
 }
 
 .login-logo {
-  height: 36px;
-  width: auto;
+  height: auto;
+  width: 100%;
+  display: flex;
   margin-bottom: 8px;
 }
 
