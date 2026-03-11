@@ -68,8 +68,6 @@ header {
 .logo {
   height: 36px;
   width: auto;
-  /* Logo tem fundo preto — usamos mix-blend-mode pra integrar */
-  mix-blend-mode: screen;
   filter: brightness(1.1);
 }
 
