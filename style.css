@@ -801,7 +801,7 @@ select option { background: var(--surface2); }
   border-radius: 6px;
   cursor: pointer;
   transition: background 0.15s;
-  font-size: 0.72rem;
+  font-size: 0.65rem;
   color: var(--text);
   user-select: none;
 }
