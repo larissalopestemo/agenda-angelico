@@ -99,11 +99,11 @@ document.addEventListener('DOMContentLoaded', () => {
 function populateTeamSelect() {
   const container = document.getElementById('inp-responsaveis');
   if (!container) return;
-   // Usuários comuns não podem atribuir tarefas à ADM
-  const lista = currentUser.role === 'admin'
-    ? AUTHORIZED_USERS
-    : AUTHORIZED_USERS.filter(u => u.role !== 'admin');
-  container.innerHTML = AUTHORIZED_USERS.map(u => `
+
+  // Andrea (admin) não aparece na lista de responsáveis
+  const lista = AUTHORIZED_USERS.filter(u => u.role !== 'admin');
+
+  container.innerHTML = lista.map(u => `
     <label class="team-checkbox">
       <input type="checkbox" value="${u.email}">
       <span class="team-check-name">${u.name}</span>
@@ -393,9 +393,8 @@ function openEditModal(id) {
   // Preenche checkboxes de responsáveis
   const container = document.getElementById('edit-responsaveis');
   if (container) {
-    const lista = currentUser.role === 'admin'
-      ? AUTHORIZED_USERS
-      : AUTHORIZED_USERS.filter(u => u.role !== 'admin');
+    const lista = AUTHORIZED_USERS.filter(u => u.role !== 'admin');
+
     container.innerHTML = lista.map(u => `
       <label class="team-checkbox">
         <input type="checkbox" value="${u.email}" ${Array.isArray(t.responsaveis) && t.responsaveis.includes(u.email) ? 'checked' : ''}>
