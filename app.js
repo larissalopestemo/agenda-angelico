@@ -33,7 +33,7 @@ const EMAILJS_CONFIG = {
 // IMPORTANTE: role 'admin' tem acesso total; role 'user' acesso restrito.
 // =============================================
 const AUTHORIZED_USERS = [
-  { name: 'Andrea Angélico',         email: 'andrea@anlema.com.br',        password: 'angelico@13', role: 'admin' },
+  { name: 'Andrea Angélico', email: 'andrea@anlema.com.br', password: 'angelico@13', role: 'admin' },
   { name: 'Debora Pelogi',  email: 'debora.pelogi@anlema.com.br', password: 'angelico@13', role: 'user'  },
   { name: 'Larissa Lopes',  email: 'paralegal@anlema.com.br',     password: 'angelico@13', role: 'user'  },
   { name: 'Thiago Prado',   email: 'thiago.prado@anlema.com.br',  password: 'angelico@13', role: 'user'  },
@@ -99,6 +99,10 @@ document.addEventListener('DOMContentLoaded', () => {
 function populateTeamSelect() {
   const container = document.getElementById('inp-responsaveis');
   if (!container) return;
+   // Usuários comuns não podem atribuir tarefas à ADM
+  const lista = currentUser.role === 'admin'
+    ? AUTHORIZED_USERS
+    : AUTHORIZED_USERS.filter(u => u.role !== 'admin');
   container.innerHTML = AUTHORIZED_USERS.map(u => `
     <label class="team-checkbox">
       <input type="checkbox" value="${u.email}">
@@ -389,7 +393,10 @@ function openEditModal(id) {
   // Preenche checkboxes de responsáveis
   const container = document.getElementById('edit-responsaveis');
   if (container) {
-    container.innerHTML = AUTHORIZED_USERS.map(u => `
+    const lista = currentUser.role === 'admin'
+      ? AUTHORIZED_USERS
+      : AUTHORIZED_USERS.filter(u => u.role !== 'admin');
+    container.innerHTML = lista.map(u => `
       <label class="team-checkbox">
         <input type="checkbox" value="${u.email}" ${Array.isArray(t.responsaveis) && t.responsaveis.includes(u.email) ? 'checked' : ''}>
         <span class="team-check-name">${u.name}</span>
