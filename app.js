@@ -1,11 +1,8 @@
 /* =============================================
    ANGÉLICO ADVOGADOS — AGENDA DE PRAZOS
-   app.js — v3
+   app.js — v3.5
    ============================================= */
 
-// =============================================
-// CONFIGURAÇÃO DO FIREBASE
-// =============================================
 const FIREBASE_CONFIG = {
   apiKey:            "AIzaSyDMLC3yCK9K4zmI5LNLgevN7OTpDqm2hkY",
   authDomain:        "angelico-advogados.firebaseapp.com",
@@ -16,18 +13,12 @@ const FIREBASE_CONFIG = {
   appId:             "1:423621967651:web:3698c1739d5ad3f07fd696"
 };
 
-// =============================================
-// CONFIGURAÇÃO DO EMAILJS
-// =============================================
 const EMAILJS_CONFIG = {
   serviceId:  "service_xlbb117",
   templateId: "template_mg7d4l6",
   publicKey:  "LhW6qGS5NdC7-quQY"
 };
 
-// =============================================
-// USUÁRIOS AUTORIZADOS
-// =============================================
 const AUTHORIZED_USERS = [
   { name: 'Andrea Angélico', email: 'andrea@anlema.com.br',        password: 'angelico@13', role: 'admin' },
   { name: 'Debora Pelogi',   email: 'debora.pelogi@anlema.com.br', password: 'angelico@13', role: 'user'  },
@@ -38,9 +29,6 @@ const AUTHORIZED_USERS = [
 
 const ANDREA_EMAIL = 'andrea@anlema.com.br';
 
-// =============================================
-// ESTADO
-// =============================================
 let db                = null;
 let tasks             = [];
 let currentUser       = null;
@@ -66,32 +54,18 @@ function isAdmin(email) {
 }
 
 function getAssignableUsers() {
-  // Andrea só aparece para ela mesma
-  if (currentUser && isAndrea(currentUser.email)) {
-    return AUTHORIZED_USERS;
-  }
+  if (currentUser && isAndrea(currentUser.email)) return AUTHORIZED_USERS;
   return AUTHORIZED_USERS.filter(u => !isAndrea(u.email));
 }
 
 function sanitizeResponsaveis(emails, includeCurrentUser = true) {
   let lista = Array.isArray(emails) ? emails.map(normalizeEmail) : [];
-
-  // Se não for a Andrea, remove Andrea da lista
-  if (!isAndrea(currentUser?.email)) {
-    lista = lista.filter(email => !isAndrea(email));
-  }
-
-  // Mantém apenas usuários autorizados
-  lista = lista.filter(email =>
-    AUTHORIZED_USERS.some(u => normalizeEmail(u.email) === email)
-  );
-
-  // Garante que o usuário logado esteja entre os responsáveis
+  if (!isAndrea(currentUser?.email)) lista = lista.filter(e => !isAndrea(e));
+  lista = lista.filter(e => AUTHORIZED_USERS.some(u => normalizeEmail(u.email) === e));
   if (includeCurrentUser && currentUser?.email) {
     const me = normalizeEmail(currentUser.email);
     if (!lista.includes(me)) lista.unshift(me);
   }
-
   return [...new Set(lista)];
 }
 
@@ -122,23 +96,19 @@ function getUserName(email) {
 document.addEventListener('DOMContentLoaded', () => {
   initFirebase();
   initClock();
-
   const saved = sessionStorage.getItem('angelico-user');
   if (saved) {
     currentUser = JSON.parse(saved);
     currentUser.email = normalizeEmail(currentUser.email);
     showApp();
   }
-
   populateTeamSelect();
 });
 
 function populateTeamSelect() {
   const container = document.getElementById('inp-responsaveis');
   if (!container) return;
-
   const lista = getAssignableUsers();
-
   container.innerHTML = lista.map(u => `
     <label class="team-checkbox">
       <input type="checkbox" value="${normalizeEmail(u.email)}">
@@ -182,9 +152,8 @@ function listenTasks() {
     snapshot.forEach(child => {
       const val = child.val() || {};
       tasks.push({
-        id: child.key,
-        ...val,
-        ownerEmail: normalizeEmail(val.ownerEmail),
+        id: child.key, ...val,
+        ownerEmail:   normalizeEmail(val.ownerEmail),
         responsaveis: Array.isArray(val.responsaveis) ? val.responsaveis.map(normalizeEmail) : []
       });
     });
@@ -217,32 +186,24 @@ function deleteTaskFirebase(id) {
 function loadLocalTasks() {
   tasks = JSON.parse(localStorage.getItem('angelico-tasks') || '[]').map(task => ({
     ...task,
-    ownerEmail: normalizeEmail(task.ownerEmail),
+    ownerEmail:   normalizeEmail(task.ownerEmail),
     responsaveis: Array.isArray(task.responsaveis) ? task.responsaveis.map(normalizeEmail) : []
   }));
   notifiedKeys = new Set(JSON.parse(localStorage.getItem('angelico-notified') || '[]'));
-  render();
-  checkAlerts();
+  render(); checkAlerts();
 }
-
 function saveLocalTask(task) {
-  task.id = Date.now().toString();
-  tasks.unshift(task);
-  localStorage.setItem('angelico-tasks', JSON.stringify(tasks));
-  render();
+  task.id = Date.now().toString(); tasks.unshift(task);
+  localStorage.setItem('angelico-tasks', JSON.stringify(tasks)); render();
 }
-
 function updateLocalTask(id, data) {
   const t = tasks.find(x => x.id == id);
   if (t) Object.assign(t, data);
-  localStorage.setItem('angelico-tasks', JSON.stringify(tasks));
-  render();
+  localStorage.setItem('angelico-tasks', JSON.stringify(tasks)); render();
 }
-
 function deleteLocalTask(id) {
   tasks = tasks.filter(x => x.id != id);
-  localStorage.setItem('angelico-tasks', JSON.stringify(tasks));
-  render();
+  localStorage.setItem('angelico-tasks', JSON.stringify(tasks)); render();
 }
 
 // =============================================
@@ -259,17 +220,14 @@ function login() {
   currentUser = { name: user.name, email: normalizeEmail(user.email), role: user.role };
   sessionStorage.setItem('angelico-user', JSON.stringify(currentUser));
   document.getElementById('login-error').style.display = 'none';
-
   showApp();
   populateTeamSelect();
-
   if (db) listenTasks(); else loadLocalTasks();
 }
 
 function showLoginError(msg) {
   const el = document.getElementById('login-error');
-  el.textContent = msg;
-  el.style.display = 'block';
+  el.textContent = msg; el.style.display = 'block';
 }
 
 function logout() {
@@ -277,7 +235,7 @@ function logout() {
   sessionStorage.removeItem('angelico-user');
   document.getElementById('screenLogin').style.display = 'flex';
   document.getElementById('screenApp').style.display   = 'none';
-  document.getElementById('login-email').value = '';
+  document.getElementById('login-email').value    = '';
   document.getElementById('login-password').value = '';
   populateTeamSelect();
 }
@@ -288,10 +246,8 @@ function showApp() {
   document.getElementById('userInfo').style.display    = 'flex';
   updateSidebarProfile();
   populateTeamSelect();
-
   const el = document.getElementById('inp-emails');
   if (el) el.value = currentUser.email;
-
   const privField = document.getElementById('field-privado');
   if (privField) privField.style.display = currentUser.role === 'admin' ? 'flex' : 'none';
 }
@@ -300,9 +256,8 @@ function showApp() {
 // PERFIL SIDEBAR
 // =============================================
 function updateSidebarProfile() {
-  const nameEl   = document.getElementById('sidebar-username');
-  const roleEl   = document.getElementById('sidebar-role');
-  const avatarEl = document.getElementById('sidebar-avatar');
+  const nameEl = document.getElementById('sidebar-username');
+  const roleEl = document.getElementById('sidebar-role');
   if (nameEl) nameEl.textContent = currentUser.name;
   if (roleEl) roleEl.textContent = currentUser.role === 'admin' ? 'Administrador' : 'Usuário';
   loadAvatar();
@@ -346,16 +301,13 @@ function loadAvatar() {
 function openNewTaskModal() {
   document.getElementById('modalNewTask').style.display = 'flex';
   setDefaultDate();
-
   populateTeamSelect();
-
   const container = document.getElementById('inp-responsaveis');
   if (container) {
     container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
       cb.checked = normalizeEmail(cb.value) === normalizeEmail(currentUser.email);
     });
   }
-
   const privField = document.getElementById('field-privado');
   if (privField) privField.style.display = currentUser.role === 'admin' ? 'flex' : 'none';
 }
@@ -383,24 +335,23 @@ function addTask() {
   let responsaveis = container
     ? Array.from(container.querySelectorAll('input[type="checkbox"]:checked')).map(cb => normalizeEmail(cb.value))
     : [];
-
   responsaveis = sanitizeResponsaveis(responsaveis, true);
 
   const emailsRaw = document.getElementById('inp-emails').value;
   const emails = emailsRaw.split(',').map(e => e.trim()).filter(Boolean);
 
-  const privCheck = document.getElementById('inp-privado');
+  const privCheck  = document.getElementById('inp-privado');
   const visibility = (currentUser.role === 'admin' && privCheck && privCheck.checked) ? 'private' : 'shared';
 
   const task = {
     title,
-    desc:        document.getElementById('inp-desc').value.trim(),
+    desc:      document.getElementById('inp-desc').value.trim(),
     date,
     responsaveis,
-    proc:        document.getElementById('inp-proc').value.trim(),
-    cat:         document.getElementById('inp-cat').value,
-    prio:        selectedPrio,
-    alertMin:    (() => {
+    proc:      document.getElementById('inp-proc').value.trim(),
+    cat:       document.getElementById('inp-cat').value,
+    prio:      selectedPrio,
+    alertMin:  (() => {
       const sel = document.getElementById('inp-alert');
       if (sel.value === 'custom') {
         const customDt = document.getElementById('inp-alert-custom').value;
@@ -415,11 +366,11 @@ function addTask() {
     })(),
     emails,
     visibility,
-    ownerEmail:  normalizeEmail(currentUser.email),
-    done:        false,
-    createdBy:   currentUser.name,
-    createdAt:   new Date().toISOString(),
-    historico:   []
+    ownerEmail: normalizeEmail(currentUser.email),
+    done:       false,
+    createdBy:  currentUser.name,
+    createdAt:  new Date().toISOString(),
+    historico:  []
   };
 
   saveTaskFirebase(task);
@@ -429,8 +380,7 @@ function addTask() {
 
 function resetForm() {
   ['inp-title', 'inp-desc', 'inp-proc'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.value = '';
+    const el = document.getElementById(id); if (el) el.value = '';
   });
   const container = document.getElementById('inp-responsaveis');
   if (container) container.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
@@ -458,7 +408,6 @@ function openEditModal(id) {
   const container = document.getElementById('edit-responsaveis');
   if (container) {
     const lista = getAssignableUsers();
-
     container.innerHTML = lista.map(u => `
       <label class="team-checkbox">
         <input type="checkbox" value="${normalizeEmail(u.email)}" ${Array.isArray(t.responsaveis) && t.responsaveis.includes(normalizeEmail(u.email)) ? 'checked' : ''}>
@@ -511,8 +460,7 @@ function saveEdit() {
   let responsaveis = editContainer
     ? Array.from(editContainer.querySelectorAll('input[type="checkbox"]:checked')).map(cb => normalizeEmail(cb.value))
     : ((tasks.find(x => x.id == id) || {}).responsaveis || []);
-
-  responsaveis = sanitizeResponsaveis(responsaveis, false);
+  responsaveis = sanitizeResponsaveis(responsaveis, true);
 
   updateTaskFirebase(id, { title, date, desc, historico, responsaveis });
   showToast('✅', 'Prazo atualizado', 'Alteração salva com sucesso.', 'ok');
@@ -526,10 +474,8 @@ function openTransferModal(id) {
   const t = tasks.find(x => x.id == id);
   if (!t || !canEditTask(t)) return;
   document.getElementById('transfer-id').value = id;
-
   const sel = document.getElementById('transfer-resp');
   sel.innerHTML = '';
-
   getAssignableUsers().forEach(u => {
     const opt = document.createElement('option');
     opt.value = normalizeEmail(u.email);
@@ -537,7 +483,6 @@ function openTransferModal(id) {
     if (normalizeEmail(t.ownerEmail) === normalizeEmail(u.email)) opt.selected = true;
     sel.appendChild(opt);
   });
-
   document.getElementById('modalTransfer').style.display = 'flex';
 }
 
@@ -548,12 +493,10 @@ function closeTransferModal() {
 function saveTransfer() {
   const id    = document.getElementById('transfer-id').value;
   const email = normalizeEmail(document.getElementById('transfer-resp').value);
-
   if (isAndrea(email) && !isAndrea(currentUser?.email)) {
     showToast('🚫', 'Sem permissão', 'Somente a Dra. Andrea pode atribuir tarefa para ela mesma.', 'warn');
     return;
   }
-
   updateTaskFirebase(id, { ownerEmail: email, responsaveis: [email] });
   showToast('✅', 'Transferido', `Demanda transferida para ${getUserName(email)}.`, 'ok');
   closeTransferModal();
@@ -611,7 +554,6 @@ function render() {
   const search = (document.getElementById('searchInput')?.value || '').toLowerCase();
 
   let filtered = tasks.filter(t => canViewTask(t));
-
   if (currentFilter === 'active')  filtered = filtered.filter(t => !t.done);
   if (currentFilter === 'overdue') filtered = filtered.filter(t => !t.done && new Date(t.date) < new Date());
   if (currentFilter === 'done')    filtered = filtered.filter(t => t.done);
@@ -643,20 +585,10 @@ function renderCard(t) {
   const canEdit   = canEditTask(t);
   const canDelete = currentUser.role === 'admin' || normalizeEmail(t.ownerEmail) === normalizeEmail(currentUser.email);
 
-  const respNames = Array.isArray(t.responsaveis)
-    ? t.responsaveis.map(e => getUserName(e)).join(', ')
-    : '';
-
-  const catLabel = {
-    email:'E-mail',
-    'prazo-marca':'Prazo Marcas',
-    reuniao:'Reunião',
-    outro:'Outro'
-  }[t.cat] || t.cat;
-
+  const respNames = Array.isArray(t.responsaveis) ? t.responsaveis.map(e => getUserName(e)).join(', ') : '';
+  const catLabel  = { email:'E-mail','prazo-marca':'Prazo Marcas',reuniao:'Reunião',outro:'Outro' }[t.cat] || t.cat;
   const histBadge = t.historico && t.historico.length > 0
-    ? `<span class="badge badge-hist" title="${t.historico.length} alteração(ões)">↺ ${t.historico.length}</span>`
-    : '';
+    ? `<span class="badge badge-hist" title="${t.historico.length} alteração(ões)">↺ ${t.historico.length}</span>` : '';
 
   return `
     <div class="task-card prio-${t.prio} ${status === 'overdue' ? 'overdue' : ''} ${t.done ? 'done' : ''}" onclick="openDetail('${t.id}')">
@@ -692,32 +624,19 @@ function renderCard(t) {
 // STATS
 // =============================================
 function updateStats() {
-  const now   = new Date();
-  const mine  = tasks.filter(t => canViewTask(t) && !t.done);
+  const now  = new Date();
+  const mine = tasks.filter(t => canViewTask(t) && !t.done);
   const over  = mine.filter(t => new Date(t.date) < now).length;
-  const today = mine.filter(t => {
-    const d = new Date(t.date) - now;
-    return d >= 0 && d < 86400000;
-  }).length;
+  const today = mine.filter(t => { const d = new Date(t.date) - now; return d >= 0 && d < 86400000; }).length;
   const total = mine.length;
-
-  const el = (id, v) => {
-    const e = document.getElementById(id);
-    if (e) e.textContent = v;
-  };
-
-  el('stat-overdue', over);
-  el('stat-today', today);
-  el('stat-total', total);
-
+  const el = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+  el('stat-overdue', over); el('stat-today', today); el('stat-total', total);
   const banner = document.getElementById('alertBanner');
   if (banner) {
     if (over > 0) {
       document.getElementById('alertText').textContent = `${over} prazo${over > 1 ? 's' : ''} em atraso!`;
       banner.classList.add('show');
-    } else {
-      banner.classList.remove('show');
-    }
+    } else banner.classList.remove('show');
   }
 }
 
@@ -728,8 +647,8 @@ function checkAlerts() {
   const now = new Date();
   tasks.filter(t => canViewTask(t)).forEach(t => {
     if (t.done) return;
-    const deadline = new Date(t.date);
-    const alertKey = t.id + '-alert';
+    const deadline   = new Date(t.date);
+    const alertKey   = t.id + '-alert';
     const overdueKey = t.id + '-overdue';
 
     if (t.alertMin > 0 && !notifiedKeys.has(alertKey)) {
@@ -738,16 +657,12 @@ function checkAlerts() {
         const mins = Math.round((deadline - now) / 60000);
         const msg = mins >= 60 ? `${Math.round(mins / 60)}h restantes` : `${mins}min restantes`;
         showToast('🔔', 'Prazo se aproximando', `${t.title} — ${msg}`, 'warn');
-        notifiedKeys.add(alertKey);
-        saveNotified();
-        sendEmailAlert(t, msg);
+        notifiedKeys.add(alertKey); saveNotified(); sendEmailAlert(t, msg);
       }
     }
     if (!notifiedKeys.has(overdueKey) && now > deadline) {
       showToast('🚨', 'Prazo vencido!', `${t.title} — venceu em ${fmtDate(t.date)}`, 'danger');
-      notifiedKeys.add(overdueKey);
-      saveNotified();
-      sendEmailOverdue(t);
+      notifiedKeys.add(overdueKey); saveNotified(); sendEmailOverdue(t);
     }
   });
 }
@@ -775,19 +690,15 @@ async function sendEmailAlert(task, timeMsg) {
   for (const email of task.emails) {
     try {
       await emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateId, {
-        to_email: email,
-        to_name: getUserName(email),
+        to_email: email, to_name: getUserName(email),
         subject: `⏰ Prazo se aproximando: ${task.title}`,
-        task_name: task.title,
-        task_date: fmtDate(task.date),
+        task_name: task.title, task_date: fmtDate(task.date),
         task_proc: task.proc || '—',
         task_resp: Array.isArray(task.responsaveis) ? task.responsaveis.map(getUserName).join(', ') : '—',
         time_msg: timeMsg,
         message: `O prazo "${task.title}" vence em ${fmtDate(task.date)} (${timeMsg}).`
       });
-    } catch (e) {
-      console.warn('E-mail erro:', e);
-    }
+    } catch (e) { console.warn('E-mail erro:', e); }
   }
 }
 
@@ -797,19 +708,15 @@ async function sendEmailOverdue(task) {
   for (const email of task.emails) {
     try {
       await emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateId, {
-        to_email: email,
-        to_name: getUserName(email),
+        to_email: email, to_name: getUserName(email),
         subject: `🚨 PRAZO VENCIDO: ${task.title}`,
-        task_name: task.title,
-        task_date: fmtDate(task.date),
+        task_name: task.title, task_date: fmtDate(task.date),
         task_proc: task.proc || '—',
         task_resp: Array.isArray(task.responsaveis) ? task.responsaveis.map(getUserName).join(', ') : '—',
         time_msg: 'PRAZO VENCIDO',
         message: `ATENÇÃO: O prazo "${task.title}" venceu em ${fmtDate(task.date)} e não foi concluído!`
       });
-    } catch (e) {
-      console.warn('E-mail erro:', e);
-    }
+    } catch (e) { console.warn('E-mail erro:', e); }
   }
 }
 
@@ -820,31 +727,22 @@ function getStatus(task) {
   if (task.done) return 'done';
   const diff = new Date(task.date) - new Date();
   if (diff < 0) return 'overdue';
-  if (diff < 86400000) return 'today';
+  if (diff < 86400000)  return 'today';
   if (diff < 259200000) return 'soon';
   return 'ok';
 }
 
 function statusBadge(status) {
   const map = {
-    overdue:['badge-overdue','⚑ Atrasado'],
-    today:['badge-today','◉ Hoje'],
-    soon:['badge-soon','◎ Em breve'],
-    ok:['badge-ok','○ No prazo'],
-    done:['badge-done','✓ Concluído']
+    overdue:['badge-overdue','⚑ Atrasado'], today:['badge-today','◉ Hoje'],
+    soon:['badge-soon','◎ Em breve'], ok:['badge-ok','○ No prazo'], done:['badge-done','✓ Concluído']
   };
   const [cls, lbl] = map[status];
   return `<span class="badge ${cls}">${lbl}</span>`;
 }
 
 function fmtDate(d) {
-  return new Date(d).toLocaleString('pt-BR', {
-    day:'2-digit',
-    month:'2-digit',
-    year:'numeric',
-    hour:'2-digit',
-    minute:'2-digit'
-  });
+  return new Date(d).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
 }
 
 function timeLeft(task) {
@@ -860,7 +758,7 @@ function timeLeft(task) {
 
 function esc(s) {
   if (!s) return '';
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 function setDefaultDate() {
@@ -880,56 +778,41 @@ function initClock() {
 }
 
 // =============================================
-// PAINEL DE DETALHE DA TAREFA
+// POPUP DE DETALHE DA TAREFA
 // =============================================
 function openDetail(id) {
   const t = tasks.find(x => x.id == id);
   if (!t) return;
 
-  const status   = getStatus(t);
-  const tl       = timeLeft(t);
-  const canEdit  = canEditTask(t);
-  const canDel   = currentUser.role === 'admin' || normalizeEmail(t.ownerEmail) === normalizeEmail(currentUser.email);
+  const status  = getStatus(t);
+  const tl      = timeLeft(t);
+  const canEdit = canEditTask(t);
+  const canDel  = currentUser.role === 'admin' || normalizeEmail(t.ownerEmail) === normalizeEmail(currentUser.email);
 
-  const catLabel = {
-    email:'E-mail',
-    'prazo-marca':'Prazo Marcas',
-    reuniao:'Reunião',
-    outro:'Outro'
-  }[t.cat] || t.cat;
-
+  const catLabel  = { email:'E-mail','prazo-marca':'Prazo Marcas',reuniao:'Reunião',outro:'Outro' }[t.cat] || t.cat;
   const prioLabel = { low:'Baixa', medium:'Média', high:'Alta' }[t.prio] || t.prio;
   const prioColor = { low:'var(--ok)', medium:'var(--warn)', high:'var(--danger)' }[t.prio];
-
-  const respNames = Array.isArray(t.responsaveis)
-    ? t.responsaveis.map(e => getUserName(e)).join(', ')
-    : (t.responsaveis || '—');
+  const respNames = Array.isArray(t.responsaveis) ? t.responsaveis.map(e => getUserName(e)).join(', ') : (t.responsaveis || '—');
 
   document.getElementById('detail-title').textContent = t.title;
   document.getElementById('detail-status-badge').outerHTML =
     `<span id="detail-status-badge">${statusBadge(status)}${t.visibility === 'private' ? '<span class="badge badge-private">🔒 Privado</span>' : ''}</span>`;
   document.getElementById('detail-date').textContent = fmtDate(t.date);
+
   const tlColor = status === 'overdue' ? 'var(--danger)' : status === 'today' ? 'var(--warn)' : 'var(--ok)';
-  document.getElementById('detail-timeleft').innerHTML = tl
-    ? `<span style="color:${tlColor}">${tl}</span>`
-    : '—';
-  document.getElementById('detail-cat').textContent = catLabel;
-  document.getElementById('detail-prio').innerHTML = `<span style="color:${prioColor};font-weight:700">${prioLabel}</span>`;
+  document.getElementById('detail-timeleft').innerHTML = tl ? `<span style="color:${tlColor}">${tl}</span>` : '—';
+  document.getElementById('detail-cat').textContent  = catLabel;
+  document.getElementById('detail-prio').innerHTML   = `<span style="color:${prioColor};font-weight:700">${prioLabel}</span>`;
   document.getElementById('detail-proc').textContent = t.proc || '—';
   document.getElementById('detail-resp').textContent = respNames;
   document.getElementById('detail-created-by').textContent = t.createdBy || '—';
   document.getElementById('detail-created-at').textContent = t.createdAt ? fmtDate(t.createdAt) : '—';
-
   document.getElementById('detail-prio-bar').style.background = prioColor;
 
   const descSection = document.getElementById('detail-desc-section');
   const descEl      = document.getElementById('detail-desc');
-  if (t.desc) {
-    descEl.textContent = t.desc;
-    descSection.style.display = 'block';
-  } else {
-    descSection.style.display = 'none';
-  }
+  if (t.desc) { descEl.textContent = t.desc; descSection.style.display = 'block'; }
+  else descSection.style.display = 'none';
 
   const hist = document.getElementById('detail-historico');
   if (t.historico && t.historico.length > 0) {
@@ -980,13 +863,13 @@ function closeDetail() {
   document.getElementById('detailOverlay').style.display = 'none';
 }
 
-function showToast(icon, title, msg, type='info') {
+function showToast(icon, title, msg, type = 'info') {
   const c = document.getElementById('toastContainer');
   const t = document.createElement('div');
   t.className = `toast toast-${type}`;
   t.innerHTML = `<div class="toast-icon">${icon}</div><div><div class="toast-title">${title}</div><div class="toast-msg">${msg}</div></div>`;
   c.appendChild(t);
-  setTimeout(() => { t.style.animation='toastOut 0.3s ease forwards'; setTimeout(()=>t.remove(),300); }, 5000);
+  setTimeout(() => { t.style.animation = 'toastOut 0.3s ease forwards'; setTimeout(() => t.remove(), 300); }, 5000);
 }
 
 setInterval(checkAlerts, 60000);
