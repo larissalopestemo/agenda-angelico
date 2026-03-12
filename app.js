@@ -138,7 +138,10 @@ function connectFirebase() {
   try {
     firebase.initializeApp(FIREBASE_CONFIG);
     db = firebase.database();
-    if (currentUser) listenTasks();
+    if (currentUser) {
+      listenTasks();
+      loadAvatar(); // recarrega avatar agora que o Firebase está pronto
+    }
   } catch (e) {
     console.warn('Firebase erro:', e);
     loadLocalTasks();
