@@ -53,9 +53,13 @@
 
     <!-- SIDEBAR -->
     <aside class="sidebar">
+
+      <!-- BOTÃO NOVA TAREFA -->
       <button class="btn-new-task" onclick="openNewTaskModal()">
         <span class="btn-new-icon">+</span> Nova Tarefa
       </button>
+
+      <!-- OVERVIEW -->
       <div class="stats-grid">
         <div class="stat-box ok">
           <div class="stat-num" id="stat-total">0</div>
@@ -70,6 +74,8 @@
           <div class="stat-lbl">Atrasados</div>
         </div>
       </div>
+
+      <!-- PERFIL -->
       <div class="profile-box">
         <div class="profile-avatar-wrap" onclick="document.getElementById('avatarInput').click()" title="Clique para trocar a foto">
           <img id="sidebar-avatar" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Ccircle cx='20' cy='15' r='8' fill='%238B8FC4'/%3E%3Cellipse cx='20' cy='34' rx='13' ry='8' fill='%238B8FC4'/%3E%3C/svg%3E" alt="Avatar" class="profile-avatar">
@@ -82,60 +88,68 @@
           <div class="profile-role" id="sidebar-role">—</div>
         </div>
       </div>
+
     </aside>
 
     <!-- MAIN -->
     <main class="main-content">
-
-      <!-- TOOLBAR -->
       <div class="toolbar">
-        <h2 class="toolbar-title" id="toolbarTitle">Prazos</h2>
-
-        <!-- Toggle de visualização -->
-        <div class="view-toggle">
-          <button class="view-btn active" id="btnViewList" onclick="setView('list')">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="0" y="0" width="14" height="2.5" rx="1"/><rect x="0" y="5.5" width="14" height="2.5" rx="1"/><rect x="0" y="11" width="14" height="2.5" rx="1"/></svg>
-            Lista
-          </button>
-          <button class="view-btn" id="btnViewKanban" onclick="setView('kanban')">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="0" y="0" width="3.5" height="14" rx="1"/><rect x="5.25" y="0" width="3.5" height="14" rx="1"/><rect x="10.5" y="0" width="3.5" height="14" rx="1"/></svg>
-            Semana
-          </button>
-        </div>
-
-        <!-- Filtros de status (só na lista) -->
-        <div class="filters" id="listFilters">
-          <button class="filter-btn active" data-filter="all"     onclick="setFilter(this)">Todos</button>
-          <button class="filter-btn"        data-filter="active"  onclick="setFilter(this)">Ativos</button>
-          <button class="filter-btn"        data-filter="overdue" onclick="setFilter(this)">Atrasados</button>
-          <button class="filter-btn"        data-filter="done"    onclick="setFilter(this)">Concluídos</button>
-        </div>
-
-        <!-- Filtros de prioridade (só na lista) -->
-        <div class="filters" id="prioFilters">
-          <button class="prio-filter-btn active" data-prio="all"    onclick="setPrioFilter(this)">Todas</button>
-          <button class="prio-filter-btn pf-low"  data-prio="low"   onclick="setPrioFilter(this)">Baixa</button>
-          <button class="prio-filter-btn pf-med"  data-prio="medium"onclick="setPrioFilter(this)">Média</button>
-          <button class="prio-filter-btn pf-high" data-prio="high"  onclick="setPrioFilter(this)">Alta</button>
-        </div>
-
-        <!-- Nav semana (só no kanban) -->
-        <div class="week-nav" id="weekNav" style="display:none">
-          <button class="week-nav-btn" onclick="changeWeek(-1)">&#8249;</button>
-          <span class="week-label" id="weekLabel">—</span>
-          <button class="week-nav-btn" onclick="changeWeek(1)">&#8250;</button>
-          <button class="week-today-btn" onclick="goToCurrentWeek()">Hoje</button>
-        </div>
+        <h2 class="toolbar-title">Prazos</h2>
 
         <input class="search-input" type="text" id="searchInput" placeholder="Buscar..." oninput="render()">
+
+        <!-- Botão de filtros estilo Excel -->
+        <div class="filter-dropdown-wrap" id="filterDropdownWrap">
+          <button class="filter-toggle-btn" id="filterToggleBtn" onclick="toggleFilterPanel()">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M1 2.5h12M3 7h8M5 11.5h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            Filtros
+            <span class="filter-badge" id="filterBadge" style="display:none">0</span>
+          </button>
+
+          <div class="filter-panel" id="filterPanel" style="display:none">
+            <div class="filter-panel-header">
+              <span>Filtros</span>
+              <button class="filter-clear-btn" onclick="clearAllFilters()">Limpar tudo</button>
+            </div>
+
+            <!-- Status -->
+            <div class="filter-section">
+              <div class="filter-section-title">Status</div>
+              <label class="filter-check"><input type="checkbox" value="active"  onchange="updateFilters()"> Ativos</label>
+              <label class="filter-check"><input type="checkbox" value="overdue" onchange="updateFilters()"> Atrasados</label>
+              <label class="filter-check"><input type="checkbox" value="today"   onchange="updateFilters()"> Hoje</label>
+              <label class="filter-check"><input type="checkbox" value="done"    onchange="updateFilters()"> Concluídos</label>
+            </div>
+
+            <!-- Prioridade -->
+            <div class="filter-section">
+              <div class="filter-section-title">Prioridade</div>
+              <label class="filter-check pf-low">  <input type="checkbox" value="prio-low"    onchange="updateFilters()"> Baixa</label>
+              <label class="filter-check pf-med">  <input type="checkbox" value="prio-medium" onchange="updateFilters()"> Média</label>
+              <label class="filter-check pf-high"> <input type="checkbox" value="prio-high"   onchange="updateFilters()"> Alta</label>
+            </div>
+
+            <!-- Responsável (só ADM) -->
+            <div class="filter-section" id="filter-section-resp" style="display:none">
+              <div class="filter-section-title">Responsável</div>
+              <div id="filter-resp-list"></div>
+            </div>
+
+            <!-- Categoria -->
+            <div class="filter-section">
+              <div class="filter-section-title">Categoria</div>
+              <label class="filter-check"><input type="checkbox" value="cat-email"       onchange="updateFilters()"> E-mail</label>
+              <label class="filter-check"><input type="checkbox" value="cat-prazo-marca" onchange="updateFilters()"> Prazo Marcas</label>
+              <label class="filter-check"><input type="checkbox" value="cat-reuniao"     onchange="updateFilters()"> Reunião</label>
+              <label class="filter-check"><input type="checkbox" value="cat-outro"       onchange="updateFilters()"> Outro</label>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <!-- LISTA -->
       <div id="taskList" class="task-list"></div>
-
-      <!-- KANBAN SEMANAL -->
-      <div id="kanbanBoard" class="kanban-board" style="display:none"></div>
-
     </main>
   </div>
 </div>
@@ -158,16 +172,16 @@
           <textarea id="inp-desc" placeholder="Detalhes ou observações..."></textarea>
         </div>
         <div class="field">
-          <label>⚑ Prazo Fatal *</label>
+          <label>Prazo *</label>
           <input type="datetime-local" id="inp-date">
-        </div>
-        <div class="field">
-          <label>📅 Data de Tratativa</label>
-          <input type="date" id="inp-tratativa" title="Quando você planeja trabalhar nesta tarefa">
         </div>
         <div class="field">
           <label>Assunto / Referência</label>
           <input type="text" id="inp-proc" placeholder="Assunto">
+        </div>
+        <div class="field">
+          <label>Responsáveis</label>
+          <div id="inp-responsaveis" class="checkbox-team"></div>
         </div>
         <div class="field">
           <label>Categoria</label>
@@ -177,10 +191,6 @@
             <option value="reuniao">Reunião</option>
             <option value="outro">Outro</option>
           </select>
-        </div>
-        <div class="field">
-          <label>Responsáveis</label>
-          <div id="inp-responsaveis" class="checkbox-team"></div>
         </div>
         <div class="field">
           <label>Prioridade</label>
@@ -208,6 +218,39 @@
           <label>Notificar e-mails (separados por vírgula)</label>
           <input type="text" id="inp-emails" placeholder="email1@anlema.com.br, email2@anlema.com.br">
         </div>
+        <!-- RECORRÊNCIA -->
+        <div class="field span-2">
+          <label>Recorrência</label>
+          <div class="toggle-row" style="margin-bottom:8px">
+            <input type="checkbox" id="inp-recorrente" onchange="toggleRecorrencia(this)">
+            <span>Tarefa recorrente — reativa automaticamente</span>
+          </div>
+          <div id="field-recorrencia" style="display:none">
+            <div class="form-grid" style="margin-top:0">
+              <div class="field">
+                <label>Frequência</label>
+                <select id="inp-recorrencia-tipo" onchange="updateRecorrenciaUI()">
+                  <option value="mensal">Mensal</option>
+                  <option value="semanal">Semanal</option>
+                  <option value="quinzenal">Quinzenal</option>
+                  <option value="anual">Anual</option>
+                </select>
+              </div>
+              <div class="field" id="field-rec-dia-mes">
+                <label>Reativar no dia</label>
+                <input type="number" id="inp-rec-dia-ativacao" min="1" max="28" value="1" placeholder="Ex: 1 (dia do mês)">
+              </div>
+              <div class="field span-2">
+                <label>Prazo após reativação (dias)</label>
+                <input type="number" id="inp-rec-prazo-dias" min="1" max="365" value="5" placeholder="Ex: 5 (até o dia 5 do mês)">
+              </div>
+            </div>
+            <div style="background:rgba(200,169,81,0.08);border:1px solid rgba(200,169,81,0.2);border-radius:8px;padding:10px 12px;margin-top:8px">
+              <div id="recorrencia-preview" style="font-size:0.72rem;color:var(--accent);font-weight:600"></div>
+            </div>
+          </div>
+        </div>
+
         <div class="field span-2" id="field-privado" style="display:none">
           <label>Visibilidade</label>
           <div class="toggle-row">
@@ -239,14 +282,10 @@
           <input type="text" id="edit-title">
         </div>
         <div class="field">
-          <label>⚑ Prazo Fatal</label>
+          <label>Novo Prazo</label>
           <input type="datetime-local" id="edit-date">
         </div>
         <div class="field">
-          <label>📅 Data de Tratativa</label>
-          <input type="date" id="edit-tratativa">
-        </div>
-        <div class="field span-2">
           <label>Descrição</label>
           <input type="text" id="edit-desc">
         </div>
@@ -292,28 +331,6 @@
   </div>
 </div>
 
-<!-- =================== MODAL TRATATIVA RÁPIDA =================== -->
-<div class="modal-overlay" id="modalTratativa" style="display:none" onclick="if(event.target===this)closeTratativaModal()">
-  <div class="modal-box modal-sm">
-    <div class="modal-header">
-      <h3>Agendar Tratativa</h3>
-      <button class="modal-close" onclick="closeTratativaModal()">✕</button>
-    </div>
-    <div class="modal-body">
-      <input type="hidden" id="tratativa-task-id">
-      <p style="font-size:0.82rem;color:var(--muted);margin-bottom:16px;line-height:1.5" id="tratativa-task-name"></p>
-      <div class="field">
-        <label>📅 Nova data de tratativa</label>
-        <input type="date" id="tratativa-new-date">
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn-ghost" onclick="closeTratativaModal()">Cancelar</button>
-      <button class="btn-primary" onclick="saveTratativa()">Confirmar</button>
-    </div>
-  </div>
-</div>
-
 <!-- =================== POPUP DETALHE =================== -->
 <div class="modal-overlay" id="detailOverlay" style="display:none" onclick="if(event.target===this)closeDetail()">
   <div class="modal-box" style="max-width:580px">
@@ -328,16 +345,12 @@
     <div class="modal-body">
       <div class="detail-grid">
         <div class="detail-item">
-          <div class="detail-lbl">⚑ Prazo Fatal</div>
+          <div class="detail-lbl">Prazo</div>
           <div class="detail-val" id="detail-date"></div>
         </div>
         <div class="detail-item">
           <div class="detail-lbl">Tempo restante</div>
           <div class="detail-val" id="detail-timeleft"></div>
-        </div>
-        <div class="detail-item">
-          <div class="detail-lbl">📅 Tratativa agendada</div>
-          <div class="detail-val" id="detail-tratativa"></div>
         </div>
         <div class="detail-item">
           <div class="detail-lbl">Categoria</div>
