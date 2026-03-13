@@ -720,6 +720,16 @@ function renderKanban() {
   const area = document.getElementById('kanbanArea');
   if (!area || !currentUser) return;
 
+  // Lê textos configuráveis do HTML
+  const cfg = document.getElementById('kanban-config');
+  const KT = {
+    backlogTitle : cfg ? cfg.dataset.backlogTitle  : '📥 Backlog',
+    backlogEmpty : cfg ? cfg.dataset.backlogEmpty  : 'Sem tarefas pendentes',
+    colEmpty     : cfg ? cfg.dataset.colEmpty      : 'Arraste aqui',
+    weekCurrent  : cfg ? cfg.dataset.weekCurrent   : 'Semana atual',
+    dayNames     : cfg ? [0,1,2,3,4].map(i => cfg.dataset['day'+i]) : ['Segunda','Terça','Quarta','Quinta','Sexta'],
+  };
+
   const days    = getWeekDays(kanbanWeekOffset);
   const weekStr = fmtWeekRange(days);
   const now     = new Date();
@@ -738,8 +748,8 @@ function renderKanban() {
     '<button class="kanban-nav-btn" onclick="kanbanWeek(-1)">‹</button>' +
     '<div class="kanban-week-label">' +
       '<span class="kanban-week-range">' + weekStr + '</span>' +
-      (kanbanWeekOffset === 0 ? '<span class="kanban-current-badge">Semana atual</span>' : '') +
-      (kanbanWeekOffset !== 0 ? '<button class="kanban-today-btn" onclick="kanbanWeek(0)">Semana atual</button>' : '') +
+      (kanbanWeekOffset === 0 ? '<span class="kanban-current-badge">' + KT.weekCurrent + '</span>' : '') +
+      (kanbanWeekOffset !== 0 ? '<button class="kanban-today-btn" onclick="kanbanWeek(0)">' + KT.weekCurrent + '</button>' : '') +
     '</div>' +
     '<button class="kanban-nav-btn" onclick="kanbanWeek(1)">›</button>' +
   '</div>' +
@@ -751,15 +761,14 @@ function renderKanban() {
     'ondragleave="this.classList.remove(\'drag-over\')" ' +
     'ondrop="onDropColumn(event,null)">' +
     '<div class="kanban-col-header">' +
-      '<span class="kanban-col-title">📥 Sem data de tratativa</span>' +
+      '<span class="kanban-col-title">' + KT.backlogTitle + '</span>' +
       '<span class="kanban-col-count">' + backlogTasks.length + '</span>' +
     '</div>' +
     '<div class="kanban-col-body">' +
       backlogTasks.map(t => renderKanbanCard(t, now)).join('') +
-      (backlogTasks.length === 0 ? '<div class="kanban-empty">Sem tarefas pendentes</div>' : '') +
+      (backlogTasks.length === 0 ? '<div class="kanban-empty">' + KT.backlogEmpty + '</div>' : '') +
     '</div></div>';
 
-  const dayNames = ['Segunda','Terça','Quarta','Quinta','Sexta'];
   days.forEach((d, i) => {
     const isToday  = isSameDay(d, now);
     const isPast   = d < startOfDay(now) && !isToday;
@@ -772,7 +781,7 @@ function renderKanban() {
       'ondrop="onDropColumn(event,\'' + d.toISOString().slice(0,10) + '\')">' +
       '<div class="kanban-col-header">' +
         '<div>' +
-          '<div class="kanban-col-dayname">' + dayNames[i] + '</div>' +
+          '<div class="kanban-col-dayname">' + KT.dayNames[i] + '</div>' +
           '<div class="kanban-col-date' + (isToday ? ' kanban-col-date-today' : '') + '">' +
             d.getDate().toString().padStart(2,'0') + '/' + (d.getMonth()+1).toString().padStart(2,'0') +
           '</div>' +
@@ -784,7 +793,7 @@ function renderKanban() {
       '</div>' +
       '<div class="kanban-col-body">' +
         dayTasks.map(t => renderKanbanCard(t, now)).join('') +
-        (dayTasks.length === 0 ? '<div class="kanban-empty">Arraste aqui</div>' : '') +
+        (dayTasks.length === 0 ? '<div class="kanban-empty">' + KT.colEmpty + '</div>' : '') +
       '</div></div>';
   });
 
