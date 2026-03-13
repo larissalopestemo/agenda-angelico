@@ -1,6 +1,6 @@
 /* =============================================
    ANGÉLICO ADVOGADOS — AGENDA DE PRAZOS
-   app.js — v3.5
+   app.js — v4.0 (Kanban + Tratativa + Vista Semanal)
    ============================================= */
 
 const FIREBASE_CONFIG = {
@@ -33,12 +33,12 @@ let db                = null;
 let tasks             = [];
 let currentUser       = null;
 let selectedPrio      = 'low';
-let activeFilters     = new Set(); // novo sistema de filtros
-let notifiedKeys      = new Set();
-
-// Mantém compatibilidade com código que ainda usa essas vars
 let currentFilter     = 'all';
 let currentPrioFilter = 'all';
+let notifiedKeys      = new Set();
+let currentView       = 'list'; // 'list' | 'kanban'
+let kanbanWeekOffset  = 0;
+let draggedTaskId     = null;
 
 // =============================================
 // HELPERS
@@ -90,7 +90,45 @@ function canEditTask(task) {
 
 function getUserName(email) {
   const u = AUTHORIZED_USERS.find(x => normalizeEmail(x.email) === normalizeEmail(email));
+  return u ? u.name.split(' ')[0] : email;
+}
+
+function getUserFullName(email) {
+  const u = AUTHORIZED_USERS.find(x => normalizeEmail(x.email) === normalizeEmail(email));
   return u ? u.name : email;
+}
+
+// =============================================
+// SEMANA UTILS
+// =============================================
+function getWeekDays(offset) {
+  const now = new Date();
+  const day = now.getDay();
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - (day === 0 ? 6 : day - 1) + (offset || 0) * 7);
+  monday.setHours(0, 0, 0, 0);
+  const days = [];
+  for (let i = 0; i < 5; i++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    days.push(d);
+  }
+  return days;
+}
+
+function isSameDay(d1, d2) {
+  return d1.getFullYear() === d2.getFullYear() &&
+         d1.getMonth()    === d2.getMonth() &&
+         d1.getDate()     === d2.getDate();
+}
+
+function startOfDay(d) {
+  const x = new Date(d); x.setHours(0,0,0,0); return x;
+}
+
+function fmtWeekRange(days) {
+  const opts = { day: '2-digit', month: '2-digit' };
+  return days[0].toLocaleDateString('pt-BR', opts) + ' – ' + days[4].toLocaleDateString('pt-BR', opts);
 }
 
 // =============================================
@@ -105,11 +143,11 @@ document.addEventListener('DOMContentLoaded', () => {
     currentUser.email = normalizeEmail(currentUser.email);
     showApp();
   }
-  populateTeamSelect();
+  populateTeamSelect('inp-responsaveis');
 });
 
-function populateTeamSelect() {
-  const container = document.getElementById('inp-responsaveis');
+function populateTeamSelect(containerId) {
+  const container = document.getElementById(containerId);
   if (!container) return;
   const lista = getAssignableUsers();
   container.innerHTML = lista.map(u => `
@@ -141,10 +179,7 @@ function connectFirebase() {
   try {
     firebase.initializeApp(FIREBASE_CONFIG);
     db = firebase.database();
-    if (currentUser) {
-      listenTasks();
-      loadAvatar(); // recarrega avatar agora que o Firebase está pronto
-    }
+    if (currentUser) { listenTasks(); loadAvatar(); }
   } catch (e) {
     console.warn('Firebase erro:', e);
     loadLocalTasks();
@@ -164,17 +199,15 @@ function listenTasks() {
       });
     });
     tasks.sort((a, b) => new Date(a.date) - new Date(b.date));
-    render();
+    renderCurrentView();
     checkAlerts();
-    checkRecorrencias();
   });
 }
 
 function saveTaskFirebase(task) {
   if (!db) { saveLocalTask(task); return; }
   const ref = db.ref('tasks').push();
-  task.id = ref.key;
-  ref.set(task);
+  task.id = ref.key; ref.set(task);
 }
 
 function updateTaskFirebase(id, data) {
@@ -197,20 +230,20 @@ function loadLocalTasks() {
     responsaveis: Array.isArray(task.responsaveis) ? task.responsaveis.map(normalizeEmail) : []
   }));
   notifiedKeys = new Set(JSON.parse(localStorage.getItem('angelico-notified') || '[]'));
-  render(); checkAlerts();
+  renderCurrentView(); checkAlerts();
 }
 function saveLocalTask(task) {
   task.id = Date.now().toString(); tasks.unshift(task);
-  localStorage.setItem('angelico-tasks', JSON.stringify(tasks)); render();
+  localStorage.setItem('angelico-tasks', JSON.stringify(tasks)); renderCurrentView();
 }
 function updateLocalTask(id, data) {
   const t = tasks.find(x => x.id == id);
   if (t) Object.assign(t, data);
-  localStorage.setItem('angelico-tasks', JSON.stringify(tasks)); render();
+  localStorage.setItem('angelico-tasks', JSON.stringify(tasks)); renderCurrentView();
 }
 function deleteLocalTask(id) {
   tasks = tasks.filter(x => x.id != id);
-  localStorage.setItem('angelico-tasks', JSON.stringify(tasks)); render();
+  localStorage.setItem('angelico-tasks', JSON.stringify(tasks)); renderCurrentView();
 }
 
 // =============================================
@@ -220,15 +253,13 @@ function login() {
   const email    = normalizeEmail(document.getElementById('login-email').value);
   const password = document.getElementById('login-password').value;
   const user     = AUTHORIZED_USERS.find(u => normalizeEmail(u.email) === email);
-
-  if (!user) { showLoginError('E-mail não autorizado. Solicite acesso ao administrador.'); return; }
+  if (!user) { showLoginError('E-mail não autorizado.'); return; }
   if (user.password !== password) { showLoginError('Senha incorreta.'); return; }
-
   currentUser = { name: user.name, email: normalizeEmail(user.email), role: user.role };
   sessionStorage.setItem('angelico-user', JSON.stringify(currentUser));
   document.getElementById('login-error').style.display = 'none';
   showApp();
-  populateTeamSelect();
+  populateTeamSelect('inp-responsaveis');
   if (db) listenTasks(); else loadLocalTasks();
 }
 
@@ -244,7 +275,7 @@ function logout() {
   document.getElementById('screenApp').style.display   = 'none';
   document.getElementById('login-email').value    = '';
   document.getElementById('login-password').value = '';
-  populateTeamSelect();
+  populateTeamSelect('inp-responsaveis');
 }
 
 function showApp() {
@@ -252,26 +283,11 @@ function showApp() {
   document.getElementById('screenApp').style.display   = 'block';
   document.getElementById('userInfo').style.display    = 'flex';
   updateSidebarProfile();
-  populateTeamSelect();
-  buildRespFilter();
+  populateTeamSelect('inp-responsaveis');
   const el = document.getElementById('inp-emails');
   if (el) el.value = currentUser.email;
   const privField = document.getElementById('field-privado');
   if (privField) privField.style.display = currentUser.role === 'admin' ? 'flex' : 'none';
-}
-
-function buildRespFilter() {
-  const section = document.getElementById('filter-section-resp');
-  const list    = document.getElementById('filter-resp-list');
-  if (!section || !list) return;
-  if (!currentUser || currentUser.role !== 'admin') { section.style.display = 'none'; return; }
-  section.style.display = 'block';
-  list.innerHTML = AUTHORIZED_USERS.map(u => `
-    <label class="filter-check">
-      <input type="checkbox" value="resp-${normalizeEmail(u.email)}" onchange="updateFilters()">
-      <span>${u.name}</span>
-    </label>
-  `).join('');
 }
 
 // =============================================
@@ -289,59 +305,59 @@ function updateSidebarProfile() {
 function handleAvatarUpload(input) {
   const file = input.files[0];
   if (!file) return;
-
-  // Reduz a imagem antes de salvar para evitar problemas de tamanho
-  const canvas = document.createElement('canvas');
-  const ctx    = canvas.getContext('2d');
-  const img    = new Image();
-  const url    = URL.createObjectURL(file);
-
-  img.onload = () => {
-    const MAX = 128;
-    const ratio = Math.min(MAX / img.width, MAX / img.height);
-    canvas.width  = img.width  * ratio;
-    canvas.height = img.height * ratio;
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    URL.revokeObjectURL(url);
-
-    const data = canvas.toDataURL('image/jpeg', 0.8);
-
-    // Salva sempre no localStorage (imediato e confiável)
-    localStorage.setItem('avatar-' + currentUser.email, data);
-
-    // Tenta salvar no Firebase também (sync entre dispositivos)
-    if (db) {
-      try {
-        db.ref('avatars/' + currentUser.email.replace(/[.#$\[\]]/g, '_')).set(data)
-          .catch(err => console.warn('Avatar Firebase erro:', err));
-      } catch(e) { console.warn('Avatar Firebase erro:', e); }
-    }
-
+  const reader = new FileReader();
+  reader.onload = e => {
+    const data = e.target.result;
+    if (db) db.ref('avatars/' + currentUser.email.replace(/[.#$\[\]]/g, '_')).set(data);
+    else localStorage.setItem('avatar-' + currentUser.email, data);
     const avatarEl = document.getElementById('sidebar-avatar');
     if (avatarEl) avatarEl.src = data;
   };
-  img.src = url;
+  reader.readAsDataURL(file);
 }
 
 function loadAvatar() {
   if (!currentUser) return;
   const avatarEl = document.getElementById('sidebar-avatar');
   if (!avatarEl) return;
-
-  // Carrega do localStorage primeiro (instantâneo)
-  const local = localStorage.getItem('avatar-' + currentUser.email);
-  if (local) { avatarEl.src = local; return; }
-
-  // Se não tiver local, tenta buscar do Firebase
   if (db) {
     db.ref('avatars/' + currentUser.email.replace(/[.#$\[\]]/g, '_')).once('value', snap => {
-      if (snap.val()) {
-        avatarEl.src = snap.val();
-        // Salva localmente para próximas vezes
-        localStorage.setItem('avatar-' + currentUser.email, snap.val());
-      }
-    }).catch(err => console.warn('Avatar load erro:', err));
+      if (snap.val()) avatarEl.src = snap.val();
+    });
+  } else {
+    const saved = localStorage.getItem('avatar-' + currentUser.email);
+    if (saved) avatarEl.src = saved;
   }
+}
+
+// =============================================
+// VIEW SWITCHER
+// =============================================
+function setView(view) {
+  currentView = view;
+  document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.querySelector(`.view-btn[data-view="${view}"]`);
+  if (btn) btn.classList.add('active');
+  const listArea    = document.getElementById('listArea');
+  const kanbanArea  = document.getElementById('kanbanArea');
+  const listToolbar = document.getElementById('listToolbar');
+  if (view === 'list') {
+    listArea.style.display   = 'block';
+    kanbanArea.style.display = 'none';
+    listToolbar.style.display = 'flex';
+    render();
+  } else {
+    listArea.style.display   = 'none';
+    kanbanArea.style.display = 'block';
+    listToolbar.style.display = 'none';
+    renderKanban();
+  }
+}
+
+function renderCurrentView() {
+  if (currentView === 'list') render();
+  else renderKanban();
+  updateStats();
 }
 
 // =============================================
@@ -350,7 +366,7 @@ function loadAvatar() {
 function openNewTaskModal() {
   document.getElementById('modalNewTask').style.display = 'flex';
   setDefaultDate();
-  populateTeamSelect();
+  populateTeamSelect('inp-responsaveis');
   const container = document.getElementById('inp-responsaveis');
   if (container) {
     container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
@@ -375,10 +391,12 @@ function toggleCustomAlert(sel) {
 // ADICIONAR TAREFA
 // =============================================
 function addTask() {
-  const title = document.getElementById('inp-title').value.trim();
-  const date  = document.getElementById('inp-date').value;
+  const title     = document.getElementById('inp-title').value.trim();
+  const date      = document.getElementById('inp-date').value;
+  const tratativa = document.getElementById('inp-tratativa').value;
+
   if (!title) { showToast('⚠️', 'Campo obrigatório', 'Informe o título.', 'warn'); return; }
-  if (!date)  { showToast('⚠️', 'Campo obrigatório', 'Informe o prazo.', 'warn');  return; }
+  if (!date)  { showToast('⚠️', 'Campo obrigatório', 'Informe o prazo fatal.', 'warn'); return; }
 
   const container = document.getElementById('inp-responsaveis');
   let responsaveis = container
@@ -387,24 +405,15 @@ function addTask() {
   responsaveis = sanitizeResponsaveis(responsaveis, true);
 
   const emailsRaw = document.getElementById('inp-emails').value;
-  const emails = emailsRaw.split(',').map(e => e.trim()).filter(Boolean);
-
-  const privCheck  = document.getElementById('inp-privado');
+  const emails    = emailsRaw.split(',').map(e => e.trim()).filter(Boolean);
+  const privCheck = document.getElementById('inp-privado');
   const visibility = (currentUser.role === 'admin' && privCheck && privCheck.checked) ? 'private' : 'shared';
-
-  // Recorrência
-  const recorrenteCheck = document.getElementById('inp-recorrente');
-  const recorrente = recorrenteCheck && recorrenteCheck.checked;
-  const recorrencia = recorrente ? {
-    tipo:        document.getElementById('inp-recorrencia-tipo')?.value || 'mensal',
-    diaAtivacao: parseInt(document.getElementById('inp-rec-dia-ativacao')?.value || '1'),
-    prazoDias:   parseInt(document.getElementById('inp-rec-prazo-dias')?.value || '5'),
-  } : null;
 
   const task = {
     title,
     desc:      document.getElementById('inp-desc').value.trim(),
     date,
+    tratativa: tratativa || null,
     responsaveis,
     proc:      document.getElementById('inp-proc').value.trim(),
     cat:       document.getElementById('inp-cat').value,
@@ -428,25 +437,22 @@ function addTask() {
     done:       false,
     createdBy:  currentUser.name,
     createdAt:  new Date().toISOString(),
-    historico:  [],
-    recorrencia
+    historico:  []
   };
 
   saveTaskFirebase(task);
-  showToast('✅', 'Prazo adicionado', `"${title}" cadastrado para ${fmtDate(date)}.`, 'ok');
+  showToast('✅', 'Prazo adicionado', '"' + title + '" cadastrado para ' + fmtDate(date) + '.', 'ok');
   closeNewTaskModal();
 }
 
 function resetForm() {
-  ['inp-title', 'inp-desc', 'inp-proc'].forEach(id => {
+  ['inp-title','inp-desc','inp-proc','inp-tratativa'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
   const container = document.getElementById('inp-responsaveis');
   if (container) container.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
   const priv = document.getElementById('inp-privado');
   if (priv) priv.checked = false;
-  const recCheck = document.getElementById('inp-recorrente');
-  if (recCheck) { recCheck.checked = false; toggleRecorrencia(recCheck); }
   document.querySelectorAll('.prio-btn').forEach(b => b.className = 'prio-btn');
   const low = document.querySelector('.prio-btn[data-prio="low"]');
   if (low) low.classList.add('active-low');
@@ -454,103 +460,17 @@ function resetForm() {
 }
 
 // =============================================
-// RECORRÊNCIA
-// =============================================
-function toggleRecorrencia(cb) {
-  const field = document.getElementById('field-recorrencia');
-  if (field) field.style.display = cb.checked ? 'block' : 'none';
-  if (cb.checked) updateRecorrenciaUI();
-}
-
-function updateRecorrenciaUI() {
-  const tipo      = document.getElementById('inp-recorrencia-tipo')?.value || 'mensal';
-  const diaAtiv   = document.getElementById('inp-rec-dia-ativacao')?.value || '1';
-  const prazoDias = document.getElementById('inp-rec-prazo-dias')?.value || '5';
-  const preview   = document.getElementById('recorrencia-preview');
-  const fieldDia  = document.getElementById('field-rec-dia-mes');
-  if (!preview) return;
-
-  if (fieldDia) fieldDia.style.display = tipo === 'semanal' ? 'none' : 'flex';
-
-  let msg = '';
-  if (tipo === 'mensal') {
-    msg = `🔁 Reativa todo dia ${diaAtiv} de cada mês — prazo até ${parseInt(diaAtiv) + parseInt(prazoDias)} dias após`;
-  } else if (tipo === 'quinzenal') {
-    msg = `🔁 Reativa a cada 15 dias (dia ${diaAtiv}) — prazo em ${prazoDias} dias após reativação`;
-  } else if (tipo === 'semanal') {
-    msg = `🔁 Reativa toda semana — prazo em ${prazoDias} dias após reativação`;
-  } else if (tipo === 'anual') {
-    msg = `🔁 Reativa anualmente no dia ${diaAtiv} — prazo em ${prazoDias} dias após reativação`;
-  }
-  preview.textContent = msg;
-}
-
-// Verifica e reativa tarefas recorrentes concluídas
-function checkRecorrencias() {
-  if (!db) return;
-  const now = new Date();
-  tasks.forEach(t => {
-    if (!t.done || !t.recorrencia) return;
-    const rec = t.recorrencia;
-    const shouldReactivate = (() => {
-      if (rec.tipo === 'mensal') {
-        return now.getDate() >= rec.diaAtivacao;
-      }
-      if (rec.tipo === 'quinzenal') {
-        return now.getDate() >= rec.diaAtivacao || now.getDate() >= (rec.diaAtivacao + 15);
-      }
-      if (rec.tipo === 'semanal') {
-        if (!t.doneAt) return false;
-        const doneDate = new Date(t.doneAt);
-        return (now - doneDate) >= 7 * 86400000;
-      }
-      if (rec.tipo === 'anual') {
-        return now.getDate() >= rec.diaAtivacao && now.getMonth() === new Date(t.date).getMonth();
-      }
-      return false;
-    })();
-
-    // Verifica se já foi reativado neste ciclo
-    const lastReativacao = t.lastReativacao ? new Date(t.lastReativacao) : null;
-    const jáReativouEsteMes = lastReativacao &&
-      lastReativacao.getMonth() === now.getMonth() &&
-      lastReativacao.getFullYear() === now.getFullYear();
-
-    if (shouldReactivate && !jáReativouEsteMes) {
-      const newDate = new Date(now);
-      newDate.setDate(now.getDate() + (rec.prazoDias || 5));
-      newDate.setHours(18, 0, 0, 0);
-
-      updateTaskFirebase(t.id, {
-        done:           false,
-        date:           newDate.toISOString().slice(0,16),
-        lastReativacao: now.toISOString(),
-        historico: [...(t.historico || []), {
-          data:          fmtDate(now.toISOString()),
-          prazoAnterior: t.date,
-          prazoNovo:     newDate.toISOString().slice(0,16),
-          justificativa: `Reativação automática (${rec.tipo})`,
-          por:           'Sistema'
-        }]
-      });
-      console.log(`Tarefa recorrente reativada: ${t.title}`);
-    }
-  });
-}
-
-
-// =============================================
 // EDITAR / ESTENDER PRAZO
 // =============================================
 function openEditModal(id) {
   const t = tasks.find(x => x.id == id);
   if (!t || !canEditTask(t)) return;
-
-  document.getElementById('edit-id').value     = id;
-  document.getElementById('edit-title').value  = t.title;
-  document.getElementById('edit-date').value   = t.date;
-  document.getElementById('edit-desc').value   = t.desc || '';
-  document.getElementById('edit-justif').value = '';
+  document.getElementById('edit-id').value        = id;
+  document.getElementById('edit-title').value     = t.title;
+  document.getElementById('edit-date').value      = t.date;
+  document.getElementById('edit-tratativa').value = t.tratativa || '';
+  document.getElementById('edit-desc').value      = t.desc || '';
+  document.getElementById('edit-justif').value    = '';
 
   const container = document.getElementById('edit-responsaveis');
   if (container) {
@@ -566,11 +486,7 @@ function openEditModal(id) {
   const hist = document.getElementById('edit-historico');
   if (t.historico && t.historico.length > 0) {
     hist.innerHTML = t.historico.map(h =>
-      `<div class="hist-item">
-        <span class="hist-date">${h.data}</span>
-        <span class="hist-msg">${esc(h.justificativa)}</span>
-        <span class="hist-by">por ${esc(h.por)}</span>
-      </div>`
+      '<div class="hist-item"><span class="hist-date">' + h.data + '</span><span class="hist-msg">' + esc(h.justificativa) + '</span><span class="hist-by">por ' + esc(h.por) + '</span></div>'
     ).join('');
   } else {
     hist.innerHTML = '<p style="color:var(--muted);font-size:0.72rem;padding:8px 0">Nenhuma alteração anterior.</p>';
@@ -584,11 +500,12 @@ function closeEditModal() {
 }
 
 function saveEdit() {
-  const id     = document.getElementById('edit-id').value;
-  const title  = document.getElementById('edit-title').value.trim();
-  const date   = document.getElementById('edit-date').value;
-  const desc   = document.getElementById('edit-desc').value.trim();
-  const justif = document.getElementById('edit-justif').value.trim();
+  const id        = document.getElementById('edit-id').value;
+  const title     = document.getElementById('edit-title').value.trim();
+  const date      = document.getElementById('edit-date').value;
+  const tratativa = document.getElementById('edit-tratativa').value;
+  const desc      = document.getElementById('edit-desc').value.trim();
+  const justif    = document.getElementById('edit-justif').value.trim();
 
   if (!title)  { showToast('⚠️', 'Obrigatório', 'Informe o título.', 'warn'); return; }
   if (!date)   { showToast('⚠️', 'Obrigatório', 'Informe o prazo.', 'warn');  return; }
@@ -596,11 +513,11 @@ function saveEdit() {
 
   const t = tasks.find(x => x.id == id);
   const historico = [...(t.historico || []), {
-    data:          fmtDate(new Date().toISOString()),
+    data: fmtDate(new Date().toISOString()),
     prazoAnterior: t.date,
-    prazoNovo:     date,
+    prazoNovo: date,
     justificativa: justif,
-    por:           currentUser.name
+    por: currentUser.name
   }];
 
   const editContainer = document.getElementById('edit-responsaveis');
@@ -609,7 +526,7 @@ function saveEdit() {
     : ((tasks.find(x => x.id == id) || {}).responsaveis || []);
   responsaveis = sanitizeResponsaveis(responsaveis, true);
 
-  updateTaskFirebase(id, { title, date, desc, historico, responsaveis });
+  updateTaskFirebase(id, { title, date, tratativa: tratativa || null, desc, historico, responsaveis });
   showToast('✅', 'Prazo atualizado', 'Alteração salva com sucesso.', 'ok');
   closeEditModal();
 }
@@ -645,7 +562,7 @@ function saveTransfer() {
     return;
   }
   updateTaskFirebase(id, { ownerEmail: email, responsaveis: [email] });
-  showToast('✅', 'Transferido', `Demanda transferida para ${getUserName(email)}.`, 'ok');
+  showToast('✅', 'Transferido', 'Demanda transferida para ' + getUserFullName(email) + '.', 'ok');
   closeTransferModal();
 }
 
@@ -655,8 +572,7 @@ function saveTransfer() {
 function toggleDone(id) {
   const t = tasks.find(x => x.id == id);
   if (!t || !canEditTask(t)) return;
-  const newDone = !t.done;
-  updateTaskFirebase(id, { done: newDone, doneAt: newDone ? new Date().toISOString() : null });
+  updateTaskFirebase(id, { done: !t.done });
 }
 
 function deleteTask(id) {
@@ -671,56 +587,21 @@ function deleteTask(id) {
 }
 
 // =============================================
-// SISTEMA DE FILTROS DROPDOWN
+// FILTROS (LISTA)
 // =============================================
-function toggleFilterPanel() {
-  const panel = document.getElementById('filterPanel');
-  const btn   = document.getElementById('filterToggleBtn');
-  const isOpen = panel.style.display !== 'none';
-  panel.style.display = isOpen ? 'none' : 'block';
-  btn.classList.toggle('active', !isOpen);
-}
-
-// Fecha painel ao clicar fora
-document.addEventListener('click', e => {
-  const wrap = document.getElementById('filterDropdownWrap');
-  if (wrap && !wrap.contains(e.target)) {
-    const panel = document.getElementById('filterPanel');
-    const btn   = document.getElementById('filterToggleBtn');
-    if (panel) panel.style.display = 'none';
-    if (btn)   btn.classList.remove('active');
-  }
-});
-
-function updateFilters() {
-  activeFilters = new Set();
-  document.querySelectorAll('#filterPanel input[type="checkbox"]:checked').forEach(cb => {
-    activeFilters.add(cb.value);
-  });
-  updateFilterBadge();
+function setFilter(btn) {
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentFilter = btn.dataset.filter;
   render();
 }
 
-function clearAllFilters() {
-  document.querySelectorAll('#filterPanel input[type="checkbox"]').forEach(cb => cb.checked = false);
-  activeFilters.clear();
-  updateFilterBadge();
+function setPrioFilter(btn) {
+  document.querySelectorAll('.prio-filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentPrioFilter = btn.dataset.prio;
   render();
 }
-
-function updateFilterBadge() {
-  const badge = document.getElementById('filterBadge');
-  if (!badge) return;
-  const count = activeFilters.size;
-  badge.textContent = count;
-  badge.style.display = count > 0 ? 'inline-flex' : 'none';
-  const btn = document.getElementById('filterToggleBtn');
-  if (btn) btn.classList.toggle('active', count > 0);
-}
-
-// Mantém compatibilidade com funções legadas (não usadas mais mas podem aparecer em HTML antigo)
-function setFilter(btn) { }
-function setPrioFilter(btn) { }
 
 function selectPrio(btn) {
   document.querySelectorAll('.prio-btn').forEach(b => b.className = 'prio-btn');
@@ -729,7 +610,7 @@ function selectPrio(btn) {
 }
 
 // =============================================
-// RENDER
+// RENDER LISTA
 // =============================================
 function render() {
   const list = document.getElementById('taskList');
@@ -737,29 +618,10 @@ function render() {
   const search = (document.getElementById('searchInput')?.value || '').toLowerCase();
 
   let filtered = tasks.filter(t => canViewTask(t));
-
-  const now = new Date();
-  const statusFilters = [...activeFilters].filter(f => ['active','overdue','today','done'].includes(f));
-  const prioFilters   = [...activeFilters].filter(f => f.startsWith('prio-')).map(f => f.replace('prio-',''));
-  const catFilters    = [...activeFilters].filter(f => f.startsWith('cat-')).map(f => f.replace('cat-',''));
-  const respFilters   = [...activeFilters].filter(f => f.startsWith('resp-')).map(f => f.replace('resp-',''));
-
-  if (statusFilters.length > 0) {
-    filtered = filtered.filter(t => statusFilters.some(sf => {
-      if (sf === 'active')  return !t.done;
-      if (sf === 'done')    return t.done;
-      if (sf === 'overdue') return !t.done && new Date(t.date) < now;
-      if (sf === 'today')   { const diff = new Date(t.date) - now; return !t.done && diff >= 0 && diff < 86400000; }
-      return false;
-    }));
-  }
-  if (prioFilters.length > 0) filtered = filtered.filter(t => prioFilters.includes(t.prio));
-  if (catFilters.length > 0)  filtered = filtered.filter(t => catFilters.includes(t.cat));
-  if (respFilters.length > 0) {
-    filtered = filtered.filter(t =>
-      Array.isArray(t.responsaveis) && t.responsaveis.some(r => respFilters.includes(normalizeEmail(r)))
-    );
-  }
+  if (currentFilter === 'active')  filtered = filtered.filter(t => !t.done);
+  if (currentFilter === 'overdue') filtered = filtered.filter(t => !t.done && new Date(t.date) < new Date());
+  if (currentFilter === 'done')    filtered = filtered.filter(t => t.done);
+  if (currentPrioFilter !== 'all') filtered = filtered.filter(t => t.prio === currentPrioFilter);
 
   if (search) {
     filtered = filtered.filter(t =>
@@ -775,7 +637,7 @@ function render() {
   });
 
   list.innerHTML = filtered.length === 0
-    ? `<div class="empty-state"><div class="icon">⚖</div><p>Nenhum prazo encontrado.</p></div>`
+    ? '<div class="empty-state"><div class="icon">⚖</div><p>Nenhum prazo encontrado.</p></div>'
     : filtered.map(renderCard).join('');
 
   updateStats();
@@ -786,43 +648,185 @@ function renderCard(t) {
   const tl        = timeLeft(t);
   const canEdit   = canEditTask(t);
   const canDelete = currentUser.role === 'admin' || normalizeEmail(t.ownerEmail) === normalizeEmail(currentUser.email);
-
   const respNames = Array.isArray(t.responsaveis) ? t.responsaveis.map(e => getUserName(e)).join(', ') : '';
   const catLabel  = { email:'E-mail','prazo-marca':'Prazo Marcas',reuniao:'Reunião',outro:'Outro' }[t.cat] || t.cat;
   const histBadge = t.historico && t.historico.length > 0
-    ? `<span class="badge badge-hist" title="${t.historico.length} alteração(ões)">↺ ${t.historico.length}</span>` : '';
-  const recBadge = t.recorrencia
-    ? `<span class="badge badge-rec" title="Tarefa recorrente: ${t.recorrencia.tipo}">🔁 ${t.recorrencia.tipo}</span>` : '';
+    ? '<span class="badge badge-hist" title="' + t.historico.length + ' alteração(ões)">↺ ' + t.historico.length + '</span>' : '';
+  const tratBadge = t.tratativa
+    ? '<span class="badge badge-tratativa">📋 ' + fmtDateShort(t.tratativa) + '</span>' : '';
 
-  return `
-    <div class="task-card prio-${t.prio} ${status === 'overdue' ? 'overdue' : ''} ${t.done ? 'done' : ''}" onclick="openDetail('${t.id}')">
-      <div class="task-info">
-        <div class="task-header">
-          <span class="task-title">${esc(t.title)}</span>
-          ${statusBadge(status)}
-          ${t.visibility === 'private' ? '<span class="badge badge-private">🔒 Privado</span>' : ''}
-          ${histBadge}
-          ${recBadge}
-        </div>
-        ${t.desc ? `<div class="task-desc">${esc(t.desc)}</div>` : ''}
-        <div class="task-meta">
-          <span>📁 ${catLabel}</span>
-          <span>📅 ${fmtDate(t.date)}</span>
-          ${tl ? `<span class="highlight">→ ${tl}</span>` : ''}
-          ${t.proc ? `<span>📎 ${esc(t.proc)}</span>` : ''}
-          ${respNames ? `<span>👥 ${esc(respNames)}</span>` : ''}
-          <span>✍ ${esc(t.createdBy || '')}</span>
-        </div>
-      </div>
-      <div class="task-actions">
-        ${canEdit ? `
-          <button class="icon-btn done-btn" title="${t.done ? 'Reabrir' : 'Concluir'}" onclick="event.stopPropagation();toggleDone('${t.id}')">${t.done ? '↩' : '✓'}</button>
-          <button class="icon-btn edit-btn" title="Editar / Estender prazo" onclick="event.stopPropagation();openEditModal('${t.id}')">✎</button>
-          <button class="icon-btn transfer-btn" title="Transferir responsável" onclick="event.stopPropagation();openTransferModal('${t.id}')">⇄</button>
-        ` : ''}
-        ${canDelete ? `<button class="icon-btn del-btn" title="Excluir" onclick="event.stopPropagation();deleteTask('${t.id}')">✕</button>` : ''}
-      </div>
-    </div>`;
+  return '<div class="task-card prio-' + t.prio + (status === 'overdue' ? ' overdue' : '') + (t.done ? ' done' : '') + '" onclick="openDetail(\'' + t.id + '\')">' +
+    '<div class="task-info">' +
+      '<div class="task-header">' +
+        '<span class="task-title">' + esc(t.title) + '</span>' +
+        statusBadge(status) +
+        (t.visibility === 'private' ? '<span class="badge badge-private">🔒 Privado</span>' : '') +
+        histBadge + tratBadge +
+      '</div>' +
+      (t.desc ? '<div class="task-desc">' + esc(t.desc) + '</div>' : '') +
+      '<div class="task-meta">' +
+        '<span>📁 ' + catLabel + '</span>' +
+        '<span>⚠️ Prazo fatal: ' + fmtDate(t.date) + '</span>' +
+        (t.tratativa ? '<span class="highlight">📋 Tratativa: ' + fmtDate(t.tratativa) + '</span>' : '') +
+        (tl ? '<span class="highlight">→ ' + tl + '</span>' : '') +
+        (t.proc ? '<span>📎 ' + esc(t.proc) + '</span>' : '') +
+        (respNames ? '<span>👥 ' + esc(respNames) + '</span>' : '') +
+        '<span>✍ ' + esc(t.createdBy || '') + '</span>' +
+      '</div>' +
+    '</div>' +
+    '<div class="task-actions">' +
+      (canEdit ? '<button class="icon-btn done-btn" title="' + (t.done ? 'Reabrir' : 'Concluir') + '" onclick="event.stopPropagation();toggleDone(\'' + t.id + '\')">' + (t.done ? '↩' : '✓') + '</button>' +
+        '<button class="icon-btn edit-btn" title="Editar / Estender prazo" onclick="event.stopPropagation();openEditModal(\'' + t.id + '\')">✎</button>' +
+        '<button class="icon-btn transfer-btn" title="Transferir responsável" onclick="event.stopPropagation();openTransferModal(\'' + t.id + '\')">⇄</button>' : '') +
+      (canDelete ? '<button class="icon-btn del-btn" title="Excluir" onclick="event.stopPropagation();deleteTask(\'' + t.id + '\')">✕</button>' : '') +
+    '</div></div>';
+}
+
+// =============================================
+// KANBAN SEMANAL
+// =============================================
+function renderKanban() {
+  const area = document.getElementById('kanbanArea');
+  if (!area || !currentUser) return;
+
+  const days    = getWeekDays(kanbanWeekOffset);
+  const weekStr = fmtWeekRange(days);
+  const now     = new Date();
+
+  const visibleTasks  = tasks.filter(t => canViewTask(t) && !t.done);
+  const backlogTasks  = visibleTasks.filter(t => !t.tratativa);
+  const tasksInWeek   = [[], [], [], [], []];
+
+  visibleTasks.filter(t => t.tratativa).forEach(t => {
+    const td  = new Date(t.tratativa);
+    const idx = days.findIndex(d => isSameDay(d, td));
+    if (idx >= 0) tasksInWeek[idx].push(t);
+  });
+
+  let html = '<div class="kanban-header">' +
+    '<button class="kanban-nav-btn" onclick="kanbanWeek(-1)">‹</button>' +
+    '<div class="kanban-week-label">' +
+      '<span class="kanban-week-range">' + weekStr + '</span>' +
+      (kanbanWeekOffset === 0 ? '<span class="kanban-current-badge">Semana atual</span>' : '') +
+      (kanbanWeekOffset !== 0 ? '<button class="kanban-today-btn" onclick="kanbanWeek(0)">Semana atual</button>' : '') +
+    '</div>' +
+    '<button class="kanban-nav-btn" onclick="kanbanWeek(1)">›</button>' +
+  '</div>' +
+  '<div class="kanban-board">';
+
+  // Coluna Backlog
+  html += '<div class="kanban-col kanban-backlog" ' +
+    'ondragover="event.preventDefault();this.classList.add(\'drag-over\')" ' +
+    'ondragleave="this.classList.remove(\'drag-over\')" ' +
+    'ondrop="onDropColumn(event,null)">' +
+    '<div class="kanban-col-header">' +
+      '<span class="kanban-col-title">📥 Backlog</span>' +
+      '<span class="kanban-col-count">' + backlogTasks.length + '</span>' +
+    '</div>' +
+    '<div class="kanban-col-body">' +
+      backlogTasks.map(t => renderKanbanCard(t, now)).join('') +
+      (backlogTasks.length === 0 ? '<div class="kanban-empty">Sem tarefas pendentes</div>' : '') +
+    '</div></div>';
+
+  const dayNames = ['Segunda','Terça','Quarta','Quinta','Sexta'];
+  days.forEach((d, i) => {
+    const isToday  = isSameDay(d, now);
+    const isPast   = d < startOfDay(now) && !isToday;
+    const dayTasks = tasksInWeek[i];
+    const overdueCount = dayTasks.filter(() => isPast).length;
+
+    html += '<div class="kanban-col' + (isToday ? ' kanban-today' : '') + (isPast ? ' kanban-past' : '') + '" ' +
+      'ondragover="event.preventDefault();this.classList.add(\'drag-over\')" ' +
+      'ondragleave="this.classList.remove(\'drag-over\')" ' +
+      'ondrop="onDropColumn(event,\'' + d.toISOString().slice(0,10) + '\')">' +
+      '<div class="kanban-col-header">' +
+        '<div>' +
+          '<div class="kanban-col-dayname">' + dayNames[i] + '</div>' +
+          '<div class="kanban-col-date' + (isToday ? ' kanban-col-date-today' : '') + '">' +
+            d.getDate().toString().padStart(2,'0') + '/' + (d.getMonth()+1).toString().padStart(2,'0') +
+          '</div>' +
+        '</div>' +
+        '<div style="display:flex;align-items:center;gap:6px">' +
+          (overdueCount > 0 ? '<span class="kanban-col-overdue-badge" title="Tratativas não realizadas">!</span>' : '') +
+          '<span class="kanban-col-count">' + dayTasks.length + '</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="kanban-col-body">' +
+        dayTasks.map(t => renderKanbanCard(t, now)).join('') +
+        (dayTasks.length === 0 ? '<div class="kanban-empty">Arraste aqui</div>' : '') +
+      '</div></div>';
+  });
+
+  html += '</div>'; // fecha kanban-board
+  area.innerHTML = html;
+}
+
+function renderKanbanCard(t, now) {
+  const deadline  = new Date(t.date);
+  const daysLeft  = Math.ceil((deadline - now) / 86400000);
+  const isOverdue = deadline < now;
+  const prioColor = { low:'var(--ok)', medium:'var(--warn)', high:'var(--danger)' }[t.prio] || 'var(--muted)';
+  const respNames = Array.isArray(t.responsaveis) ? t.responsaveis.map(e => getUserName(e)).join(', ') : '';
+
+  let dlClass = '';
+  if (isOverdue) dlClass = 'kcard-deadline-overdue';
+  else if (daysLeft <= 1) dlClass = 'kcard-deadline-soon';
+  else if (daysLeft <= 3) dlClass = 'kcard-deadline-warn';
+
+  return '<div class="kanban-card kprio-' + t.prio + (isOverdue ? ' kcard-overdue' : '') + '" ' +
+    'draggable="true" ' +
+    'ondragstart="onDragStart(event,\'' + t.id + '\')" ' +
+    'ondragend="onDragEnd(event)" ' +
+    'onclick="openDetail(\'' + t.id + '\')">' +
+    '<div class="kcard-prio-bar" style="background:' + prioColor + '"></div>' +
+    '<div class="kcard-body">' +
+      '<div class="kcard-title">' + esc(t.title) + '</div>' +
+      (t.proc ? '<div class="kcard-proc">📎 ' + esc(t.proc) + '</div>' : '') +
+      '<div class="kcard-footer">' +
+        '<span class="kcard-deadline ' + dlClass + '">⚠️ ' + fmtDateShort(t.date) + '</span>' +
+        (respNames ? '<span class="kcard-resp">👤 ' + esc(respNames) + '</span>' : '') +
+      '</div>' +
+    '</div></div>';
+}
+
+function kanbanWeek(val) {
+  if (val === 0) kanbanWeekOffset = 0;
+  else kanbanWeekOffset += val;
+  renderKanban();
+}
+
+// =============================================
+// DRAG & DROP KANBAN
+// =============================================
+function onDragStart(event, taskId) {
+  draggedTaskId = taskId;
+  event.dataTransfer.effectAllowed = 'move';
+  setTimeout(() => { if (event.target) event.target.style.opacity = '0.4'; }, 0);
+}
+
+function onDragEnd(event) {
+  if (event.target) event.target.style.opacity = '';
+  document.querySelectorAll('.kanban-col').forEach(col => col.classList.remove('drag-over'));
+}
+
+function onDropColumn(event, dateStr) {
+  event.preventDefault();
+  document.querySelectorAll('.kanban-col').forEach(col => col.classList.remove('drag-over'));
+  if (!draggedTaskId) return;
+
+  const t = tasks.find(x => x.id == draggedTaskId);
+  if (!t || !canEditTask(t)) {
+    showToast('🚫', 'Sem permissão', 'Você não pode mover esta tarefa.', 'warn');
+    draggedTaskId = null;
+    return;
+  }
+
+  const tratativa = dateStr ? dateStr + 'T12:00' : null;
+  updateTaskFirebase(draggedTaskId, { tratativa });
+  draggedTaskId = null;
+
+  const msg = dateStr ? 'Tratativa agendada para ' + fmtDateShort(tratativa) : 'Tarefa movida para Backlog';
+  showToast('📋', 'Tratativa atualizada', msg, 'ok');
 }
 
 // =============================================
@@ -839,7 +843,7 @@ function updateStats() {
   const banner = document.getElementById('alertBanner');
   if (banner) {
     if (over > 0) {
-      document.getElementById('alertText').textContent = `${over} prazo${over > 1 ? 's' : ''} em atraso!`;
+      document.getElementById('alertText').textContent = over + ' prazo' + (over > 1 ? 's' : '') + ' em atraso!';
       banner.classList.add('show');
     } else banner.classList.remove('show');
   }
@@ -855,18 +859,17 @@ function checkAlerts() {
     const deadline   = new Date(t.date);
     const alertKey   = t.id + '-alert';
     const overdueKey = t.id + '-overdue';
-
     if (t.alertMin > 0 && !notifiedKeys.has(alertKey)) {
       const alertTime = new Date(deadline - t.alertMin * 60000);
       if (now >= alertTime && now < deadline) {
         const mins = Math.round((deadline - now) / 60000);
-        const msg = mins >= 60 ? `${Math.round(mins / 60)}h restantes` : `${mins}min restantes`;
-        showToast('🔔', 'Prazo se aproximando', `${t.title} — ${msg}`, 'warn');
+        const msg = mins >= 60 ? Math.round(mins / 60) + 'h restantes' : mins + 'min restantes';
+        showToast('🔔', 'Prazo se aproximando', t.title + ' — ' + msg, 'warn');
         notifiedKeys.add(alertKey); saveNotified(); sendEmailAlert(t, msg);
       }
     }
     if (!notifiedKeys.has(overdueKey) && now > deadline) {
-      showToast('🚨', 'Prazo vencido!', `${t.title} — venceu em ${fmtDate(t.date)}`, 'danger');
+      showToast('🚨', 'Prazo vencido!', t.title + ' — venceu em ' + fmtDate(t.date), 'danger');
       notifiedKeys.add(overdueKey); saveNotified(); sendEmailOverdue(t);
     }
   });
@@ -895,13 +898,13 @@ async function sendEmailAlert(task, timeMsg) {
   for (const email of task.emails) {
     try {
       await emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateId, {
-        to_email: email, to_name: getUserName(email),
-        subject: `⏰ Prazo se aproximando: ${task.title}`,
+        to_email: email, to_name: getUserFullName(email),
+        subject: '⏰ Prazo se aproximando: ' + task.title,
         task_name: task.title, task_date: fmtDate(task.date),
         task_proc: task.proc || '—',
-        task_resp: Array.isArray(task.responsaveis) ? task.responsaveis.map(getUserName).join(', ') : '—',
+        task_resp: Array.isArray(task.responsaveis) ? task.responsaveis.map(getUserFullName).join(', ') : '—',
         time_msg: timeMsg,
-        message: `O prazo "${task.title}" vence em ${fmtDate(task.date)} (${timeMsg}).`
+        message: 'O prazo "' + task.title + '" vence em ' + fmtDate(task.date) + ' (' + timeMsg + ').'
       });
     } catch (e) { console.warn('E-mail erro:', e); }
   }
@@ -913,13 +916,13 @@ async function sendEmailOverdue(task) {
   for (const email of task.emails) {
     try {
       await emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateId, {
-        to_email: email, to_name: getUserName(email),
-        subject: `🚨 PRAZO VENCIDO: ${task.title}`,
+        to_email: email, to_name: getUserFullName(email),
+        subject: '🚨 PRAZO VENCIDO: ' + task.title,
         task_name: task.title, task_date: fmtDate(task.date),
         task_proc: task.proc || '—',
-        task_resp: Array.isArray(task.responsaveis) ? task.responsaveis.map(getUserName).join(', ') : '—',
+        task_resp: Array.isArray(task.responsaveis) ? task.responsaveis.map(getUserFullName).join(', ') : '—',
         time_msg: 'PRAZO VENCIDO',
-        message: `ATENÇÃO: O prazo "${task.title}" venceu em ${fmtDate(task.date)} e não foi concluído!`
+        message: 'ATENÇÃO: O prazo "' + task.title + '" venceu em ' + fmtDate(task.date) + ' e não foi concluído!'
       });
     } catch (e) { console.warn('E-mail erro:', e); }
   }
@@ -943,22 +946,26 @@ function statusBadge(status) {
     soon:['badge-soon','◎ Em breve'], ok:['badge-ok','○ No prazo'], done:['badge-done','✓ Concluído']
   };
   const [cls, lbl] = map[status];
-  return `<span class="badge ${cls}">${lbl}</span>`;
+  return '<span class="badge ' + cls + '">' + lbl + '</span>';
 }
 
 function fmtDate(d) {
   return new Date(d).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
 }
 
+function fmtDateShort(d) {
+  return new Date(d).toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit' });
+}
+
 function timeLeft(task) {
   if (task.done) return '';
   const diff = new Date(task.date) - new Date();
   if (diff < 0) {
-    const abs = Math.abs(diff), h = Math.floor(abs / 3600000), m = Math.floor((abs % 3600000) / 60000);
-    return h > 48 ? `${Math.floor(h / 24)}d atrás` : h > 0 ? `${h}h ${m}m atrás` : `${m}m atrás`;
+    const abs = Math.abs(diff), h = Math.floor(abs/3600000), m = Math.floor((abs%3600000)/60000);
+    return h > 48 ? Math.floor(h/24) + 'd atrás' : h > 0 ? h + 'h ' + m + 'm atrás' : m + 'm atrás';
   }
-  const h = Math.floor(diff / 3600000), m = Math.floor((diff % 3600000) / 60000);
-  return h > 48 ? `em ${Math.floor(h / 24)}d` : h > 0 ? `em ${h}h ${m}m` : `em ${m}m`;
+  const h = Math.floor(diff/3600000), m = Math.floor((diff%3600000)/60000);
+  return h > 48 ? 'em ' + Math.floor(h/24) + 'd' : h > 0 ? 'em ' + h + 'h ' + m + 'm' : 'em ' + m + 'm';
 }
 
 function esc(s) {
@@ -997,17 +1004,18 @@ function openDetail(id) {
   const catLabel  = { email:'E-mail','prazo-marca':'Prazo Marcas',reuniao:'Reunião',outro:'Outro' }[t.cat] || t.cat;
   const prioLabel = { low:'Baixa', medium:'Média', high:'Alta' }[t.prio] || t.prio;
   const prioColor = { low:'var(--ok)', medium:'var(--warn)', high:'var(--danger)' }[t.prio];
-  const respNames = Array.isArray(t.responsaveis) ? t.responsaveis.map(e => getUserName(e)).join(', ') : (t.responsaveis || '—');
+  const respNames = Array.isArray(t.responsaveis) ? t.responsaveis.map(e => getUserFullName(e)).join(', ') : (t.responsaveis || '—');
 
   document.getElementById('detail-title').textContent = t.title;
   document.getElementById('detail-status-badge').outerHTML =
-    `<span id="detail-status-badge">${statusBadge(status)}${t.visibility === 'private' ? '<span class="badge badge-private">🔒 Privado</span>' : ''}${t.recorrencia ? `<span class="badge badge-rec">🔁 ${t.recorrencia.tipo}</span>` : ''}</span>`;
-  document.getElementById('detail-date').textContent = fmtDate(t.date);
+    '<span id="detail-status-badge">' + statusBadge(status) + (t.visibility === 'private' ? '<span class="badge badge-private">🔒 Privado</span>' : '') + '</span>';
+  document.getElementById('detail-date').textContent      = fmtDate(t.date);
+  document.getElementById('detail-tratativa').textContent = t.tratativa ? fmtDate(t.tratativa) : '—';
 
   const tlColor = status === 'overdue' ? 'var(--danger)' : status === 'today' ? 'var(--warn)' : 'var(--ok)';
-  document.getElementById('detail-timeleft').innerHTML = tl ? `<span style="color:${tlColor}">${tl}</span>` : '—';
+  document.getElementById('detail-timeleft').innerHTML = tl ? '<span style="color:' + tlColor + '">' + tl + '</span>' : '—';
   document.getElementById('detail-cat').textContent  = catLabel;
-  document.getElementById('detail-prio').innerHTML   = `<span style="color:${prioColor};font-weight:700">${prioLabel}</span>`;
+  document.getElementById('detail-prio').innerHTML   = '<span style="color:' + prioColor + ';font-weight:700">' + prioLabel + '</span>';
   document.getElementById('detail-proc').textContent = t.proc || '—';
   document.getElementById('detail-resp').textContent = respNames;
   document.getElementById('detail-created-by').textContent = t.createdBy || '—';
@@ -1021,34 +1029,13 @@ function openDetail(id) {
 
   const hist = document.getElementById('detail-historico');
   if (t.historico && t.historico.length > 0) {
-    hist.innerHTML = t.historico.map(h => `
-      <div class="hist-item">
-        <span class="hist-date">${h.data}</span>
-        <span class="hist-msg">${esc(h.justificativa)}</span>
-        <span class="hist-by">por ${esc(h.por)}</span>
-        ${h.prazoAnterior ? `<div style="font-size:0.65rem;color:var(--muted);margin-top:3px">Prazo: ${fmtDate(h.prazoAnterior)} → ${fmtDate(h.prazoNovo)}</div>` : ''}
-      </div>`).join('');
+    hist.innerHTML = t.historico.map(h =>
+      '<div class="hist-item"><span class="hist-date">' + h.data + '</span><span class="hist-msg">' + esc(h.justificativa) + '</span><span class="hist-by">por ' + esc(h.por) + '</span>' +
+      (h.prazoAnterior ? '<div style="font-size:0.65rem;color:var(--muted);margin-top:3px">Prazo: ' + fmtDate(h.prazoAnterior) + ' → ' + fmtDate(h.prazoNovo) + '</div>' : '') +
+      '</div>'
+    ).join('');
   } else {
     hist.innerHTML = '<p style="color:var(--muted);font-size:0.72rem;padding:8px 0">Nenhuma alteração registrada.</p>';
-  }
-
-  // Recorrência info no detalhe
-  const recSection = document.getElementById('detail-rec-section');
-  if (recSection) recSection.remove(); // limpa anterior
-  if (t.recorrencia) {
-    const rec = t.recorrencia;
-    const recDiv = document.createElement('div');
-    recDiv.id = 'detail-rec-section';
-    recDiv.style.cssText = 'margin-top:18px';
-    const tipoLabel = { mensal:'Mensal', semanal:'Semanal', quinzenal:'Quinzenal', anual:'Anual' }[rec.tipo] || rec.tipo;
-    recDiv.innerHTML = `
-      <div class="detail-section-title">Recorrência</div>
-      <div style="background:rgba(76,175,125,0.08);border:1px solid rgba(76,175,125,0.2);border-radius:8px;padding:12px 14px;font-size:0.78rem">
-        <span style="color:var(--ok);font-weight:700">🔁 ${tipoLabel}</span>
-        <span style="color:var(--muted);margin-left:12px">Reativa no dia ${rec.diaAtivacao} — prazo em ${rec.prazoDias} dias</span>
-        ${t.lastReativacao ? `<div style="color:var(--muted);font-size:0.68rem;margin-top:4px">Última reativação: ${fmtDate(t.lastReativacao)}</div>` : ''}
-      </div>`;
-    document.querySelector('#detailOverlay .modal-body').appendChild(recDiv);
   }
 
   const actions = document.getElementById('detail-actions');
@@ -1087,11 +1074,11 @@ function closeDetail() {
   document.getElementById('detailOverlay').style.display = 'none';
 }
 
-function showToast(icon, title, msg, type = 'info') {
+function showToast(icon, title, msg, type) {
   const c = document.getElementById('toastContainer');
   const t = document.createElement('div');
-  t.className = `toast toast-${type}`;
-  t.innerHTML = `<div class="toast-icon">${icon}</div><div><div class="toast-title">${title}</div><div class="toast-msg">${msg}</div></div>`;
+  t.className = 'toast toast-' + (type || 'info');
+  t.innerHTML = '<div class="toast-icon">' + icon + '</div><div><div class="toast-title">' + title + '</div><div class="toast-msg">' + msg + '</div></div>';
   c.appendChild(t);
   setTimeout(() => { t.style.animation = 'toastOut 0.3s ease forwards'; setTimeout(() => t.remove(), 300); }, 5000);
 }
