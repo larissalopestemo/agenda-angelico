@@ -33,9 +33,12 @@ let db                = null;
 let tasks             = [];
 let currentUser       = null;
 let selectedPrio      = 'low';
+let activeFilters     = new Set(); // novo sistema de filtros
+let notifiedKeys      = new Set();
+
+// Mantém compatibilidade com código que ainda usa essas vars
 let currentFilter     = 'all';
 let currentPrioFilter = 'all';
-let notifiedKeys      = new Set();
 
 // =============================================
 // HELPERS
@@ -163,6 +166,7 @@ function listenTasks() {
     tasks.sort((a, b) => new Date(a.date) - new Date(b.date));
     render();
     checkAlerts();
+    checkRecorrencias();
   });
 }
 
@@ -249,10 +253,25 @@ function showApp() {
   document.getElementById('userInfo').style.display    = 'flex';
   updateSidebarProfile();
   populateTeamSelect();
+  buildRespFilter();
   const el = document.getElementById('inp-emails');
   if (el) el.value = currentUser.email;
   const privField = document.getElementById('field-privado');
   if (privField) privField.style.display = currentUser.role === 'admin' ? 'flex' : 'none';
+}
+
+function buildRespFilter() {
+  const section = document.getElementById('filter-section-resp');
+  const list    = document.getElementById('filter-resp-list');
+  if (!section || !list) return;
+  if (!currentUser || currentUser.role !== 'admin') { section.style.display = 'none'; return; }
+  section.style.display = 'block';
+  list.innerHTML = AUTHORIZED_USERS.map(u => `
+    <label class="filter-check">
+      <input type="checkbox" value="resp-${normalizeEmail(u.email)}" onchange="updateFilters()">
+      <span>${u.name}</span>
+    </label>
+  `).join('');
 }
 
 // =============================================
@@ -346,6 +365,15 @@ function addTask() {
   const privCheck  = document.getElementById('inp-privado');
   const visibility = (currentUser.role === 'admin' && privCheck && privCheck.checked) ? 'private' : 'shared';
 
+  // Recorrência
+  const recorrenteCheck = document.getElementById('inp-recorrente');
+  const recorrente = recorrenteCheck && recorrenteCheck.checked;
+  const recorrencia = recorrente ? {
+    tipo:        document.getElementById('inp-recorrencia-tipo')?.value || 'mensal',
+    diaAtivacao: parseInt(document.getElementById('inp-rec-dia-ativacao')?.value || '1'),
+    prazoDias:   parseInt(document.getElementById('inp-rec-prazo-dias')?.value || '5'),
+  } : null;
+
   const task = {
     title,
     desc:      document.getElementById('inp-desc').value.trim(),
@@ -373,7 +401,8 @@ function addTask() {
     done:       false,
     createdBy:  currentUser.name,
     createdAt:  new Date().toISOString(),
-    historico:  []
+    historico:  [],
+    recorrencia
   };
 
   saveTaskFirebase(task);
@@ -389,11 +418,99 @@ function resetForm() {
   if (container) container.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
   const priv = document.getElementById('inp-privado');
   if (priv) priv.checked = false;
+  const recCheck = document.getElementById('inp-recorrente');
+  if (recCheck) { recCheck.checked = false; toggleRecorrencia(recCheck); }
   document.querySelectorAll('.prio-btn').forEach(b => b.className = 'prio-btn');
   const low = document.querySelector('.prio-btn[data-prio="low"]');
   if (low) low.classList.add('active-low');
   selectedPrio = 'low';
 }
+
+// =============================================
+// RECORRÊNCIA
+// =============================================
+function toggleRecorrencia(cb) {
+  const field = document.getElementById('field-recorrencia');
+  if (field) field.style.display = cb.checked ? 'block' : 'none';
+  if (cb.checked) updateRecorrenciaUI();
+}
+
+function updateRecorrenciaUI() {
+  const tipo      = document.getElementById('inp-recorrencia-tipo')?.value || 'mensal';
+  const diaAtiv   = document.getElementById('inp-rec-dia-ativacao')?.value || '1';
+  const prazoDias = document.getElementById('inp-rec-prazo-dias')?.value || '5';
+  const preview   = document.getElementById('recorrencia-preview');
+  const fieldDia  = document.getElementById('field-rec-dia-mes');
+  if (!preview) return;
+
+  if (fieldDia) fieldDia.style.display = tipo === 'semanal' ? 'none' : 'flex';
+
+  let msg = '';
+  if (tipo === 'mensal') {
+    msg = `🔁 Reativa todo dia ${diaAtiv} de cada mês — prazo até ${parseInt(diaAtiv) + parseInt(prazoDias)} dias após`;
+  } else if (tipo === 'quinzenal') {
+    msg = `🔁 Reativa a cada 15 dias (dia ${diaAtiv}) — prazo em ${prazoDias} dias após reativação`;
+  } else if (tipo === 'semanal') {
+    msg = `🔁 Reativa toda semana — prazo em ${prazoDias} dias após reativação`;
+  } else if (tipo === 'anual') {
+    msg = `🔁 Reativa anualmente no dia ${diaAtiv} — prazo em ${prazoDias} dias após reativação`;
+  }
+  preview.textContent = msg;
+}
+
+// Verifica e reativa tarefas recorrentes concluídas
+function checkRecorrencias() {
+  if (!db) return;
+  const now = new Date();
+  tasks.forEach(t => {
+    if (!t.done || !t.recorrencia) return;
+    const rec = t.recorrencia;
+    const shouldReactivate = (() => {
+      if (rec.tipo === 'mensal') {
+        return now.getDate() >= rec.diaAtivacao;
+      }
+      if (rec.tipo === 'quinzenal') {
+        return now.getDate() >= rec.diaAtivacao || now.getDate() >= (rec.diaAtivacao + 15);
+      }
+      if (rec.tipo === 'semanal') {
+        if (!t.doneAt) return false;
+        const doneDate = new Date(t.doneAt);
+        return (now - doneDate) >= 7 * 86400000;
+      }
+      if (rec.tipo === 'anual') {
+        return now.getDate() >= rec.diaAtivacao && now.getMonth() === new Date(t.date).getMonth();
+      }
+      return false;
+    })();
+
+    // Verifica se já foi reativado neste ciclo
+    const lastReativacao = t.lastReativacao ? new Date(t.lastReativacao) : null;
+    const jáReativouEsteMes = lastReativacao &&
+      lastReativacao.getMonth() === now.getMonth() &&
+      lastReativacao.getFullYear() === now.getFullYear();
+
+    if (shouldReactivate && !jáReativouEsteMes) {
+      const newDate = new Date(now);
+      newDate.setDate(now.getDate() + (rec.prazoDias || 5));
+      newDate.setHours(18, 0, 0, 0);
+
+      updateTaskFirebase(t.id, {
+        done:           false,
+        date:           newDate.toISOString().slice(0,16),
+        lastReativacao: now.toISOString(),
+        historico: [...(t.historico || []), {
+          data:          fmtDate(now.toISOString()),
+          prazoAnterior: t.date,
+          prazoNovo:     newDate.toISOString().slice(0,16),
+          justificativa: `Reativação automática (${rec.tipo})`,
+          por:           'Sistema'
+        }]
+      });
+      console.log(`Tarefa recorrente reativada: ${t.title}`);
+    }
+  });
+}
+
 
 // =============================================
 // EDITAR / ESTENDER PRAZO
@@ -511,7 +628,8 @@ function saveTransfer() {
 function toggleDone(id) {
   const t = tasks.find(x => x.id == id);
   if (!t || !canEditTask(t)) return;
-  updateTaskFirebase(id, { done: !t.done });
+  const newDone = !t.done;
+  updateTaskFirebase(id, { done: newDone, doneAt: newDone ? new Date().toISOString() : null });
 }
 
 function deleteTask(id) {
@@ -526,21 +644,56 @@ function deleteTask(id) {
 }
 
 // =============================================
-// FILTROS
+// SISTEMA DE FILTROS DROPDOWN
 // =============================================
-function setFilter(btn) {
-  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  currentFilter = btn.dataset.filter;
+function toggleFilterPanel() {
+  const panel = document.getElementById('filterPanel');
+  const btn   = document.getElementById('filterToggleBtn');
+  const isOpen = panel.style.display !== 'none';
+  panel.style.display = isOpen ? 'none' : 'block';
+  btn.classList.toggle('active', !isOpen);
+}
+
+// Fecha painel ao clicar fora
+document.addEventListener('click', e => {
+  const wrap = document.getElementById('filterDropdownWrap');
+  if (wrap && !wrap.contains(e.target)) {
+    const panel = document.getElementById('filterPanel');
+    const btn   = document.getElementById('filterToggleBtn');
+    if (panel) panel.style.display = 'none';
+    if (btn)   btn.classList.remove('active');
+  }
+});
+
+function updateFilters() {
+  activeFilters = new Set();
+  document.querySelectorAll('#filterPanel input[type="checkbox"]:checked').forEach(cb => {
+    activeFilters.add(cb.value);
+  });
+  updateFilterBadge();
   render();
 }
 
-function setPrioFilter(btn) {
-  document.querySelectorAll('.prio-filter-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  currentPrioFilter = btn.dataset.prio;
+function clearAllFilters() {
+  document.querySelectorAll('#filterPanel input[type="checkbox"]').forEach(cb => cb.checked = false);
+  activeFilters.clear();
+  updateFilterBadge();
   render();
 }
+
+function updateFilterBadge() {
+  const badge = document.getElementById('filterBadge');
+  if (!badge) return;
+  const count = activeFilters.size;
+  badge.textContent = count;
+  badge.style.display = count > 0 ? 'inline-flex' : 'none';
+  const btn = document.getElementById('filterToggleBtn');
+  if (btn) btn.classList.toggle('active', count > 0);
+}
+
+// Mantém compatibilidade com funções legadas (não usadas mais mas podem aparecer em HTML antigo)
+function setFilter(btn) { }
+function setPrioFilter(btn) { }
 
 function selectPrio(btn) {
   document.querySelectorAll('.prio-btn').forEach(b => b.className = 'prio-btn');
@@ -557,10 +710,29 @@ function render() {
   const search = (document.getElementById('searchInput')?.value || '').toLowerCase();
 
   let filtered = tasks.filter(t => canViewTask(t));
-  if (currentFilter === 'active')  filtered = filtered.filter(t => !t.done);
-  if (currentFilter === 'overdue') filtered = filtered.filter(t => !t.done && new Date(t.date) < new Date());
-  if (currentFilter === 'done')    filtered = filtered.filter(t => t.done);
-  if (currentPrioFilter !== 'all') filtered = filtered.filter(t => t.prio === currentPrioFilter);
+
+  const now = new Date();
+  const statusFilters = [...activeFilters].filter(f => ['active','overdue','today','done'].includes(f));
+  const prioFilters   = [...activeFilters].filter(f => f.startsWith('prio-')).map(f => f.replace('prio-',''));
+  const catFilters    = [...activeFilters].filter(f => f.startsWith('cat-')).map(f => f.replace('cat-',''));
+  const respFilters   = [...activeFilters].filter(f => f.startsWith('resp-')).map(f => f.replace('resp-',''));
+
+  if (statusFilters.length > 0) {
+    filtered = filtered.filter(t => statusFilters.some(sf => {
+      if (sf === 'active')  return !t.done;
+      if (sf === 'done')    return t.done;
+      if (sf === 'overdue') return !t.done && new Date(t.date) < now;
+      if (sf === 'today')   { const diff = new Date(t.date) - now; return !t.done && diff >= 0 && diff < 86400000; }
+      return false;
+    }));
+  }
+  if (prioFilters.length > 0) filtered = filtered.filter(t => prioFilters.includes(t.prio));
+  if (catFilters.length > 0)  filtered = filtered.filter(t => catFilters.includes(t.cat));
+  if (respFilters.length > 0) {
+    filtered = filtered.filter(t =>
+      Array.isArray(t.responsaveis) && t.responsaveis.some(r => respFilters.includes(normalizeEmail(r)))
+    );
+  }
 
   if (search) {
     filtered = filtered.filter(t =>
@@ -592,6 +764,8 @@ function renderCard(t) {
   const catLabel  = { email:'E-mail','prazo-marca':'Prazo Marcas',reuniao:'Reunião',outro:'Outro' }[t.cat] || t.cat;
   const histBadge = t.historico && t.historico.length > 0
     ? `<span class="badge badge-hist" title="${t.historico.length} alteração(ões)">↺ ${t.historico.length}</span>` : '';
+  const recBadge = t.recorrencia
+    ? `<span class="badge badge-rec" title="Tarefa recorrente: ${t.recorrencia.tipo}">🔁 ${t.recorrencia.tipo}</span>` : '';
 
   return `
     <div class="task-card prio-${t.prio} ${status === 'overdue' ? 'overdue' : ''} ${t.done ? 'done' : ''}" onclick="openDetail('${t.id}')">
@@ -601,6 +775,7 @@ function renderCard(t) {
           ${statusBadge(status)}
           ${t.visibility === 'private' ? '<span class="badge badge-private">🔒 Privado</span>' : ''}
           ${histBadge}
+          ${recBadge}
         </div>
         ${t.desc ? `<div class="task-desc">${esc(t.desc)}</div>` : ''}
         <div class="task-meta">
@@ -799,7 +974,7 @@ function openDetail(id) {
 
   document.getElementById('detail-title').textContent = t.title;
   document.getElementById('detail-status-badge').outerHTML =
-    `<span id="detail-status-badge">${statusBadge(status)}${t.visibility === 'private' ? '<span class="badge badge-private">🔒 Privado</span>' : ''}</span>`;
+    `<span id="detail-status-badge">${statusBadge(status)}${t.visibility === 'private' ? '<span class="badge badge-private">🔒 Privado</span>' : ''}${t.recorrencia ? `<span class="badge badge-rec">🔁 ${t.recorrencia.tipo}</span>` : ''}</span>`;
   document.getElementById('detail-date').textContent = fmtDate(t.date);
 
   const tlColor = status === 'overdue' ? 'var(--danger)' : status === 'today' ? 'var(--warn)' : 'var(--ok)';
@@ -828,6 +1003,25 @@ function openDetail(id) {
       </div>`).join('');
   } else {
     hist.innerHTML = '<p style="color:var(--muted);font-size:0.72rem;padding:8px 0">Nenhuma alteração registrada.</p>';
+  }
+
+  // Recorrência info no detalhe
+  const recSection = document.getElementById('detail-rec-section');
+  if (recSection) recSection.remove(); // limpa anterior
+  if (t.recorrencia) {
+    const rec = t.recorrencia;
+    const recDiv = document.createElement('div');
+    recDiv.id = 'detail-rec-section';
+    recDiv.style.cssText = 'margin-top:18px';
+    const tipoLabel = { mensal:'Mensal', semanal:'Semanal', quinzenal:'Quinzenal', anual:'Anual' }[rec.tipo] || rec.tipo;
+    recDiv.innerHTML = `
+      <div class="detail-section-title">Recorrência</div>
+      <div style="background:rgba(76,175,125,0.08);border:1px solid rgba(76,175,125,0.2);border-radius:8px;padding:12px 14px;font-size:0.78rem">
+        <span style="color:var(--ok);font-weight:700">🔁 ${tipoLabel}</span>
+        <span style="color:var(--muted);margin-left:12px">Reativa no dia ${rec.diaAtivacao} — prazo em ${rec.prazoDias} dias</span>
+        ${t.lastReativacao ? `<div style="color:var(--muted);font-size:0.68rem;margin-top:4px">Última reativação: ${fmtDate(t.lastReativacao)}</div>` : ''}
+      </div>`;
+    document.querySelector('#detailOverlay .modal-body').appendChild(recDiv);
   }
 
   const actions = document.getElementById('detail-actions');
