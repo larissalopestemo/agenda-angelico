@@ -455,164 +455,48 @@ select option { background: var(--surface2); }
   min-width: 80px;
 }
 
-/* =============================================
-   FILTRO DROPDOWN ESTILO EXCEL
-   ============================================= */
-.filter-dropdown-wrap {
-  position: relative;
-}
+.filters { display: flex; gap: 5px; }
 
-.filter-toggle-btn {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  background: var(--surface);
-  border: 1px solid var(--border2);
-  color: var(--text);
+.filter-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
   font-family: 'Montserrat', sans-serif;
-  font-size: 0.72rem;
+  font-size: 0.63rem;
   font-weight: 600;
-  letter-spacing: 0.05em;
-  padding: 8px 14px;
-  border-radius: 8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 6px 12px;
+  border-radius: 6px;
   cursor: pointer;
   transition: all 0.18s;
-  white-space: nowrap;
 }
-.filter-toggle-btn:hover,
-.filter-toggle-btn.active {
+.filter-btn:hover, .filter-btn.active {
   border-color: var(--accent);
   color: var(--accent);
   background: rgba(200,169,81,0.08);
 }
 
-.filter-badge {
-  background: var(--accent);
-  color: #0A0C4A;
-  font-size: 0.6rem;
-  font-weight: 800;
-  min-width: 16px;
-  height: 16px;
-  border-radius: 8px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 4px;
-}
-
-.filter-panel {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  background: var(--surface);
-  border: 1px solid var(--border2);
-  border-radius: 12px;
-  min-width: 260px;
-  max-width: 300px;
-  box-shadow: 0 16px 48px rgba(0,0,0,0.5);
-  z-index: 300;
-  animation: fadeUp 0.2s ease;
-  overflow: hidden;
-}
-
-.filter-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px 10px;
-  border-bottom: 1px solid var(--border);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.filter-clear-btn {
+/* Filtros de prioridade */
+.prio-filter-btn {
   background: transparent;
-  border: none;
-  color: var(--accent);
-  font-family: 'Montserrat', sans-serif;
-  font-size: 0.65rem;
-  font-weight: 600;
-  cursor: pointer;
-  padding: 2px 6px;
-  border-radius: 4px;
-  transition: background 0.15s;
-}
-.filter-clear-btn:hover { background: rgba(200,169,81,0.12); }
-
-.filter-section {
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--border);
-}
-.filter-section:last-child { border-bottom: none; }
-
-.filter-section-title {
-  font-size: 0.58rem;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  border: 1px solid var(--border);
   color: var(--muted);
-  margin-bottom: 8px;
-}
-
-.filter-check {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 6px;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.63rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 6px 12px;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 0.72rem;
-  font-weight: 500;
-  color: var(--text);
-  transition: background 0.12s;
-  user-select: none;
+  transition: all 0.18s;
 }
-.filter-check:hover { background: rgba(255,255,255,0.04); }
-.filter-check input[type="checkbox"] {
-  width: 14px;
-  height: 14px;
-  accent-color: var(--accent);
-  cursor: pointer;
-  flex-shrink: 0;
-  padding: 0;
-}
-.filter-check.pf-low  input:checked { accent-color: var(--ok); }
-.filter-check.pf-med  input:checked { accent-color: var(--warn); }
-.filter-check.pf-high input:checked { accent-color: var(--danger); }
-.filter-check.pf-low  { color: var(--ok);    }
-.filter-check.pf-med  { color: var(--warn);  }
-.filter-check.pf-high { color: var(--danger);}
-
-/* Tags de filtros ativos */
-.active-filter-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-bottom: 12px;
-}
-.filter-tag {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  background: rgba(200,169,81,0.1);
-  border: 1px solid rgba(200,169,81,0.25);
-  color: var(--accent);
-  font-size: 0.62rem;
-  font-weight: 600;
-  padding: 3px 8px;
-  border-radius: 20px;
-  cursor: default;
-}
-.filter-tag-remove {
-  cursor: pointer;
-  opacity: 0.7;
-  font-size: 0.65rem;
-  transition: opacity 0.15s;
-}
-.filter-tag-remove:hover { opacity: 1; }
+.prio-filter-btn.active   { border-color:var(--accent); color:var(--accent); background:rgba(200,169,81,0.08); }
+.prio-filter-btn.pf-low.active   { border-color:var(--ok);     color:var(--ok);     background:rgba(76,175,125,0.08); }
+.prio-filter-btn.pf-med.active   { border-color:var(--warn);   color:var(--warn);   background:rgba(224,145,58,0.08); }
+.prio-filter-btn.pf-high.active  { border-color:var(--danger); color:var(--danger); background:rgba(224,82,82,0.08); }
+.prio-filter-btn:hover { border-color:var(--muted2); color:var(--text); }
 
 .search-input {
   width: 200px;
@@ -690,7 +574,6 @@ select option { background: var(--surface2); }
 .badge-done    { background:rgba(139,143,196,0.1); color:var(--muted); }
 .badge-private { background:rgba(139,143,196,0.12); color:var(--muted); }
 .badge-hist    { background:rgba(200,169,81,0.1); color:var(--accent); cursor:default; }
-.badge-rec     { background:rgba(76,175,125,0.1); color:var(--ok); cursor:default; }
 
 .task-desc {
   font-size: 0.75rem;
@@ -1030,3 +913,360 @@ select option { background: var(--surface2); }
 
 /* Card cursor pointer */
 .task-card { cursor: pointer; }
+
+/* =============================================
+   FIELD HINT
+   ============================================= */
+.field-hint {
+  font-size: 0.6rem;
+  color: var(--muted);
+  margin-top: 4px;
+  font-style: italic;
+}
+
+/* =============================================
+   VIEW SWITCHER
+   ============================================= */
+.view-switcher {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.view-btn {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 10px 6px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+}
+
+.view-btn:hover {
+  border-color: var(--muted);
+  color: var(--text);
+}
+
+.view-btn.active {
+  background: rgba(200,169,81,0.12);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* =============================================
+   BADGE TRATATIVA
+   ============================================= */
+.badge-tratativa {
+  background: rgba(100,149,237,0.15);
+  color: #7EB8FF;
+}
+
+/* =============================================
+   KANBAN HEADER
+   ============================================= */
+.kanban-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0 20px 0;
+  gap: 12px;
+}
+
+.kanban-nav-btn {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 1.2rem;
+  font-weight: 700;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.18s;
+}
+.kanban-nav-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(200,169,81,0.08);
+}
+
+.kanban-week-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  justify-content: center;
+}
+
+.kanban-week-range {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+
+.kanban-current-badge {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: rgba(200,169,81,0.15);
+  color: var(--accent);
+  padding: 3px 8px;
+  border-radius: 20px;
+  border: 1px solid rgba(200,169,81,0.3);
+}
+
+.kanban-today-btn {
+  background: transparent;
+  border: 1px solid var(--border2);
+  color: var(--muted);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.18s;
+}
+.kanban-today-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* =============================================
+   KANBAN BOARD
+   ============================================= */
+.kanban-board {
+  display: grid;
+  grid-template-columns: 200px repeat(5, 1fr);
+  gap: 10px;
+  align-items: start;
+  min-height: calc(100vh - 220px);
+}
+
+/* =============================================
+   KANBAN COLUNA
+   ============================================= */
+.kanban-col {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  min-height: 300px;
+  display: flex;
+  flex-direction: column;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.kanban-col.drag-over {
+  border-color: var(--accent);
+  background: rgba(200,169,81,0.05);
+}
+
+.kanban-col.kanban-today {
+  border-color: rgba(200,169,81,0.4);
+  background: rgba(200,169,81,0.04);
+}
+
+.kanban-col.kanban-past {
+  opacity: 0.7;
+}
+
+.kanban-col.kanban-backlog {
+  background: rgba(139,143,196,0.06);
+  border-color: rgba(139,143,196,0.2);
+}
+
+.kanban-col-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 14px 14px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.kanban-col-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.kanban-col-dayname {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.kanban-col-date {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-top: 2px;
+}
+
+.kanban-col-date-today {
+  color: var(--accent);
+}
+
+.kanban-col-count {
+  background: var(--surface2);
+  color: var(--muted);
+  font-size: 0.6rem;
+  font-weight: 700;
+  padding: 3px 7px;
+  border-radius: 10px;
+  min-width: 20px;
+  text-align: center;
+}
+
+.kanban-col-overdue-badge {
+  background: rgba(224,82,82,0.2);
+  color: var(--danger);
+  font-size: 0.65rem;
+  font-weight: 700;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+}
+
+.kanban-col-body {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+
+.kanban-empty {
+  font-size: 0.65rem;
+  color: var(--muted2);
+  text-align: center;
+  padding: 20px 8px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  letter-spacing: 0.04em;
+}
+
+/* =============================================
+   KANBAN CARD
+   ============================================= */
+.kanban-card {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: grab;
+  display: flex;
+  gap: 0;
+  overflow: hidden;
+  transition: all 0.15s;
+  animation: slideIn 0.25s ease;
+}
+
+.kanban-card:active { cursor: grabbing; }
+
+.kanban-card:hover {
+  border-color: var(--border2);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+}
+
+.kanban-card.kcard-overdue {
+  border-color: rgba(224,82,82,0.3);
+  background: rgba(224,82,82,0.05);
+}
+
+.kcard-prio-bar {
+  width: 3px;
+  flex-shrink: 0;
+}
+
+.kcard-body {
+  padding: 10px 10px 10px 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.kcard-title {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.4;
+  margin-bottom: 4px;
+  word-break: break-word;
+}
+
+.kcard-proc {
+  font-size: 0.62rem;
+  color: var(--muted);
+  margin-bottom: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kcard-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.kcard-deadline {
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+
+.kcard-deadline-overdue { color: var(--danger); }
+.kcard-deadline-soon    { color: var(--danger); }
+.kcard-deadline-warn    { color: var(--warn); }
+
+.kcard-resp {
+  font-size: 0.58rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 80px;
+}
+
+/* =============================================
+   KANBAN RESPONSIVE
+   ============================================= */
+@media (max-width: 1100px) {
+  .kanban-board {
+    grid-template-columns: 180px repeat(5, 1fr);
+    gap: 8px;
+  }
+}
+
+@media (max-width: 900px) {
+  .kanban-board {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+  }
+  .kanban-col {
+    min-height: 120px;
+  }
+}
