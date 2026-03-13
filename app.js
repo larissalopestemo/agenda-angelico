@@ -751,7 +751,7 @@ function renderKanban() {
     'ondragleave="this.classList.remove(\'drag-over\')" ' +
     'ondrop="onDropColumn(event,null)">' +
     '<div class="kanban-col-header">' +
-      '<span class="kanban-col-title">📥 Backlog</span>' +
+      '<span class="kanban-col-title">📥 Sem data de tratativa</span>' +
       '<span class="kanban-col-count">' + backlogTasks.length + '</span>' +
     '</div>' +
     '<div class="kanban-col-body">' +
