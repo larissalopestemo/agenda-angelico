@@ -1,6 +1,6 @@
 /* =============================================
    ANGÉLICO ADVOGADOS — AGENDA DE PRAZOS
-   app.js — v3.5
+   app.js — v4.0 (Kanban + Tratativa + Vista Semanal)
    ============================================= */
 
 const FIREBASE_CONFIG = {
@@ -37,6 +37,9 @@ let currentFilter     = 'all';
 let currentPrioFilter = 'all';
 let currentRespFilter = 'all';
 let notifiedKeys      = new Set();
+let currentView       = 'list'; // 'list' | 'kanban'
+let kanbanWeekOffset  = 0;
+let draggedTaskId     = null;
 
 // =============================================
 // HELPERS
@@ -88,7 +91,45 @@ function canEditTask(task) {
 
 function getUserName(email) {
   const u = AUTHORIZED_USERS.find(x => normalizeEmail(x.email) === normalizeEmail(email));
+  return u ? u.name.split(' ')[0] : email;
+}
+
+function getUserFullName(email) {
+  const u = AUTHORIZED_USERS.find(x => normalizeEmail(x.email) === normalizeEmail(email));
   return u ? u.name : email;
+}
+
+// =============================================
+// SEMANA UTILS
+// =============================================
+function getWeekDays(offset) {
+  const now = new Date();
+  const day = now.getDay();
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - (day === 0 ? 6 : day - 1) + (offset || 0) * 7);
+  monday.setHours(0, 0, 0, 0);
+  const days = [];
+  for (let i = 0; i < 5; i++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    days.push(d);
+  }
+  return days;
+}
+
+function isSameDay(d1, d2) {
+  return d1.getFullYear() === d2.getFullYear() &&
+         d1.getMonth()    === d2.getMonth() &&
+         d1.getDate()     === d2.getDate();
+}
+
+function startOfDay(d) {
+  const x = new Date(d); x.setHours(0,0,0,0); return x;
+}
+
+function fmtWeekRange(days) {
+  const opts = { day: '2-digit', month: '2-digit' };
+  return days[0].toLocaleDateString('pt-BR', opts) + ' – ' + days[4].toLocaleDateString('pt-BR', opts);
 }
 
 // =============================================
@@ -103,11 +144,11 @@ document.addEventListener('DOMContentLoaded', () => {
     currentUser.email = normalizeEmail(currentUser.email);
     showApp();
   }
-  populateTeamSelect();
+  populateTeamSelect('inp-responsaveis');
 });
 
-function populateTeamSelect() {
-  const container = document.getElementById('inp-responsaveis');
+function populateTeamSelect(containerId) {
+  const container = document.getElementById(containerId);
   if (!container) return;
   const lista = getAssignableUsers();
   container.innerHTML = lista.map(u => `
@@ -139,10 +180,7 @@ function connectFirebase() {
   try {
     firebase.initializeApp(FIREBASE_CONFIG);
     db = firebase.database();
-    if (currentUser) {
-      listenTasks();
-      loadAvatar(); // recarrega avatar agora que o Firebase está pronto
-    }
+    if (currentUser) { listenTasks(); loadAvatar(); }
   } catch (e) {
     console.warn('Firebase erro:', e);
     loadLocalTasks();
@@ -162,7 +200,7 @@ function listenTasks() {
       });
     });
     tasks.sort((a, b) => new Date(a.date) - new Date(b.date));
-    render();
+    renderCurrentView();
     checkAlerts();
   });
 }
@@ -170,8 +208,7 @@ function listenTasks() {
 function saveTaskFirebase(task) {
   if (!db) { saveLocalTask(task); return; }
   const ref = db.ref('tasks').push();
-  task.id = ref.key;
-  ref.set(task);
+  task.id = ref.key; ref.set(task);
 }
 
 function updateTaskFirebase(id, data) {
@@ -194,20 +231,20 @@ function loadLocalTasks() {
     responsaveis: Array.isArray(task.responsaveis) ? task.responsaveis.map(normalizeEmail) : []
   }));
   notifiedKeys = new Set(JSON.parse(localStorage.getItem('angelico-notified') || '[]'));
-  render(); checkAlerts();
+  renderCurrentView(); checkAlerts();
 }
 function saveLocalTask(task) {
   task.id = Date.now().toString(); tasks.unshift(task);
-  localStorage.setItem('angelico-tasks', JSON.stringify(tasks)); render();
+  localStorage.setItem('angelico-tasks', JSON.stringify(tasks)); renderCurrentView();
 }
 function updateLocalTask(id, data) {
   const t = tasks.find(x => x.id == id);
   if (t) Object.assign(t, data);
-  localStorage.setItem('angelico-tasks', JSON.stringify(tasks)); render();
+  localStorage.setItem('angelico-tasks', JSON.stringify(tasks)); renderCurrentView();
 }
 function deleteLocalTask(id) {
   tasks = tasks.filter(x => x.id != id);
-  localStorage.setItem('angelico-tasks', JSON.stringify(tasks)); render();
+  localStorage.setItem('angelico-tasks', JSON.stringify(tasks)); renderCurrentView();
 }
 
 // =============================================
@@ -217,15 +254,13 @@ function login() {
   const email    = normalizeEmail(document.getElementById('login-email').value);
   const password = document.getElementById('login-password').value;
   const user     = AUTHORIZED_USERS.find(u => normalizeEmail(u.email) === email);
-
-  if (!user) { showLoginError('E-mail não autorizado. Solicite acesso ao administrador.'); return; }
+  if (!user) { showLoginError('E-mail não autorizado.'); return; }
   if (user.password !== password) { showLoginError('Senha incorreta.'); return; }
-
   currentUser = { name: user.name, email: normalizeEmail(user.email), role: user.role };
   sessionStorage.setItem('angelico-user', JSON.stringify(currentUser));
   document.getElementById('login-error').style.display = 'none';
   showApp();
-  populateTeamSelect();
+  populateTeamSelect('inp-responsaveis');
   if (db) listenTasks(); else loadLocalTasks();
 }
 
@@ -241,7 +276,7 @@ function logout() {
   document.getElementById('screenApp').style.display   = 'none';
   document.getElementById('login-email').value    = '';
   document.getElementById('login-password').value = '';
-  populateTeamSelect();
+  populateTeamSelect('inp-responsaveis');
 }
 
 function showApp() {
@@ -249,7 +284,7 @@ function showApp() {
   document.getElementById('screenApp').style.display   = 'block';
   document.getElementById('userInfo').style.display    = 'flex';
   updateSidebarProfile();
-  populateTeamSelect();
+  populateTeamSelect('inp-responsaveis');
   const el = document.getElementById('inp-emails');
   if (el) el.value = currentUser.email;
   const privField = document.getElementById('field-privado');
@@ -294,11 +329,8 @@ function handleAvatarUpload(input) {
   const reader = new FileReader();
   reader.onload = e => {
     const data = e.target.result;
-    if (db) {
-      db.ref('avatars/' + currentUser.email.replace(/[.#$\[\]]/g, '_')).set(data);
-    } else {
-      localStorage.setItem('avatar-' + currentUser.email, data);
-    }
+    if (db) db.ref('avatars/' + currentUser.email.replace(/[.#$\[\]]/g, '_')).set(data);
+    else localStorage.setItem('avatar-' + currentUser.email, data);
     const avatarEl = document.getElementById('sidebar-avatar');
     if (avatarEl) avatarEl.src = data;
   };
@@ -320,12 +352,42 @@ function loadAvatar() {
 }
 
 // =============================================
+// VIEW SWITCHER
+// =============================================
+function setView(view) {
+  currentView = view;
+  document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.querySelector(`.view-btn[data-view="${view}"]`);
+  if (btn) btn.classList.add('active');
+  const listArea    = document.getElementById('listArea');
+  const kanbanArea  = document.getElementById('kanbanArea');
+  const listToolbar = document.getElementById('listToolbar');
+  if (view === 'list') {
+    listArea.style.display   = 'block';
+    kanbanArea.style.display = 'none';
+    listToolbar.style.display = 'flex';
+    render();
+  } else {
+    listArea.style.display   = 'none';
+    kanbanArea.style.display = 'block';
+    listToolbar.style.display = 'none';
+    renderKanban();
+  }
+}
+
+function renderCurrentView() {
+  if (currentView === 'list') render();
+  else renderKanban();
+  updateStats();
+}
+
+// =============================================
 // MODAL NOVA TAREFA
 // =============================================
 function openNewTaskModal() {
   document.getElementById('modalNewTask').style.display = 'flex';
   setDefaultDate();
-  populateTeamSelect();
+  populateTeamSelect('inp-responsaveis');
   const container = document.getElementById('inp-responsaveis');
   if (container) {
     container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
@@ -350,10 +412,12 @@ function toggleCustomAlert(sel) {
 // ADICIONAR TAREFA
 // =============================================
 function addTask() {
-  const title = document.getElementById('inp-title').value.trim();
-  const date  = document.getElementById('inp-date').value;
+  const title     = document.getElementById('inp-title').value.trim();
+  const date      = document.getElementById('inp-date').value;
+  const tratativa = document.getElementById('inp-tratativa').value;
+
   if (!title) { showToast('⚠️', 'Campo obrigatório', 'Informe o título.', 'warn'); return; }
-  if (!date)  { showToast('⚠️', 'Campo obrigatório', 'Informe o prazo.', 'warn');  return; }
+  if (!date)  { showToast('⚠️', 'Campo obrigatório', 'Informe o prazo fatal.', 'warn'); return; }
 
   const container = document.getElementById('inp-responsaveis');
   let responsaveis = container
@@ -362,15 +426,15 @@ function addTask() {
   responsaveis = sanitizeResponsaveis(responsaveis, true);
 
   const emailsRaw = document.getElementById('inp-emails').value;
-  const emails = emailsRaw.split(',').map(e => e.trim()).filter(Boolean);
-
-  const privCheck  = document.getElementById('inp-privado');
+  const emails    = emailsRaw.split(',').map(e => e.trim()).filter(Boolean);
+  const privCheck = document.getElementById('inp-privado');
   const visibility = (currentUser.role === 'admin' && privCheck && privCheck.checked) ? 'private' : 'shared';
 
   const task = {
     title,
     desc:      document.getElementById('inp-desc').value.trim(),
     date,
+    tratativa: tratativa || null,
     responsaveis,
     proc:      document.getElementById('inp-proc').value.trim(),
     cat:       document.getElementById('inp-cat').value,
@@ -398,12 +462,12 @@ function addTask() {
   };
 
   saveTaskFirebase(task);
-  showToast('✅', 'Prazo adicionado', `"${title}" cadastrado para ${fmtDate(date)}.`, 'ok');
+  showToast('✅', 'Prazo adicionado', '"' + title + '" cadastrado para ' + fmtDate(date) + '.', 'ok');
   closeNewTaskModal();
 }
 
 function resetForm() {
-  ['inp-title', 'inp-desc', 'inp-proc'].forEach(id => {
+  ['inp-title','inp-desc','inp-proc','inp-tratativa'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
   const container = document.getElementById('inp-responsaveis');
@@ -422,12 +486,12 @@ function resetForm() {
 function openEditModal(id) {
   const t = tasks.find(x => x.id == id);
   if (!t || !canEditTask(t)) return;
-
-  document.getElementById('edit-id').value     = id;
-  document.getElementById('edit-title').value  = t.title;
-  document.getElementById('edit-date').value   = t.date;
-  document.getElementById('edit-desc').value   = t.desc || '';
-  document.getElementById('edit-justif').value = '';
+  document.getElementById('edit-id').value        = id;
+  document.getElementById('edit-title').value     = t.title;
+  document.getElementById('edit-date').value      = t.date;
+  document.getElementById('edit-tratativa').value = t.tratativa || '';
+  document.getElementById('edit-desc').value      = t.desc || '';
+  document.getElementById('edit-justif').value    = '';
 
   const container = document.getElementById('edit-responsaveis');
   if (container) {
@@ -443,11 +507,7 @@ function openEditModal(id) {
   const hist = document.getElementById('edit-historico');
   if (t.historico && t.historico.length > 0) {
     hist.innerHTML = t.historico.map(h =>
-      `<div class="hist-item">
-        <span class="hist-date">${h.data}</span>
-        <span class="hist-msg">${esc(h.justificativa)}</span>
-        <span class="hist-by">por ${esc(h.por)}</span>
-      </div>`
+      '<div class="hist-item"><span class="hist-date">' + h.data + '</span><span class="hist-msg">' + esc(h.justificativa) + '</span><span class="hist-by">por ' + esc(h.por) + '</span></div>'
     ).join('');
   } else {
     hist.innerHTML = '<p style="color:var(--muted);font-size:0.72rem;padding:8px 0">Nenhuma alteração anterior.</p>';
@@ -461,11 +521,12 @@ function closeEditModal() {
 }
 
 function saveEdit() {
-  const id     = document.getElementById('edit-id').value;
-  const title  = document.getElementById('edit-title').value.trim();
-  const date   = document.getElementById('edit-date').value;
-  const desc   = document.getElementById('edit-desc').value.trim();
-  const justif = document.getElementById('edit-justif').value.trim();
+  const id        = document.getElementById('edit-id').value;
+  const title     = document.getElementById('edit-title').value.trim();
+  const date      = document.getElementById('edit-date').value;
+  const tratativa = document.getElementById('edit-tratativa').value;
+  const desc      = document.getElementById('edit-desc').value.trim();
+  const justif    = document.getElementById('edit-justif').value.trim();
 
   if (!title)  { showToast('⚠️', 'Obrigatório', 'Informe o título.', 'warn'); return; }
   if (!date)   { showToast('⚠️', 'Obrigatório', 'Informe o prazo.', 'warn');  return; }
@@ -473,11 +534,11 @@ function saveEdit() {
 
   const t = tasks.find(x => x.id == id);
   const historico = [...(t.historico || []), {
-    data:          fmtDate(new Date().toISOString()),
+    data: fmtDate(new Date().toISOString()),
     prazoAnterior: t.date,
-    prazoNovo:     date,
+    prazoNovo: date,
     justificativa: justif,
-    por:           currentUser.name
+    por: currentUser.name
   }];
 
   const editContainer = document.getElementById('edit-responsaveis');
@@ -486,7 +547,7 @@ function saveEdit() {
     : ((tasks.find(x => x.id == id) || {}).responsaveis || []);
   responsaveis = sanitizeResponsaveis(responsaveis, true);
 
-  updateTaskFirebase(id, { title, date, desc, historico, responsaveis });
+  updateTaskFirebase(id, { title, date, tratativa: tratativa || null, desc, historico, responsaveis });
   showToast('✅', 'Prazo atualizado', 'Alteração salva com sucesso.', 'ok');
   closeEditModal();
 }
@@ -522,7 +583,7 @@ function saveTransfer() {
     return;
   }
   updateTaskFirebase(id, { ownerEmail: email, responsaveis: [email] });
-  showToast('✅', 'Transferido', `Demanda transferida para ${getUserName(email)}.`, 'ok');
+  showToast('✅', 'Transferido', 'Demanda transferida para ' + getUserFullName(email) + '.', 'ok');
   closeTransferModal();
 }
 
@@ -547,7 +608,7 @@ function deleteTask(id) {
 }
 
 // =============================================
-// FILTROS
+// FILTROS (LISTA)
 // =============================================
 function setFilter(btn) {
   document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
@@ -570,7 +631,7 @@ function selectPrio(btn) {
 }
 
 // =============================================
-// RENDER
+// RENDER LISTA
 // =============================================
 function render() {
   const list = document.getElementById('taskList');
@@ -583,7 +644,7 @@ function render() {
   if (currentFilter === 'done')    filtered = filtered.filter(t => t.done);
   if (currentPrioFilter !== 'all') filtered = filtered.filter(t => t.prio === currentPrioFilter);
 
-  // Filtro de responsável (só ADM)
+  // Filtro de responsável (só ADM vê o select)
   const respSel = document.getElementById('filter-resp');
   const respVal = respSel ? normalizeEmail(respSel.value) : 'all';
   if (respVal && respVal !== 'all') {
@@ -607,7 +668,7 @@ function render() {
   });
 
   list.innerHTML = filtered.length === 0
-    ? `<div class="empty-state"><div class="icon">⚖</div><p>Nenhum prazo encontrado.</p></div>`
+    ? '<div class="empty-state"><div class="icon">⚖</div><p>Nenhum prazo encontrado.</p></div>'
     : filtered.map(renderCard).join('');
 
   updateStats();
@@ -618,40 +679,185 @@ function renderCard(t) {
   const tl        = timeLeft(t);
   const canEdit   = canEditTask(t);
   const canDelete = currentUser.role === 'admin' || normalizeEmail(t.ownerEmail) === normalizeEmail(currentUser.email);
-
   const respNames = Array.isArray(t.responsaveis) ? t.responsaveis.map(e => getUserName(e)).join(', ') : '';
   const catLabel  = { email:'E-mail','prazo-marca':'Prazo Marcas',reuniao:'Reunião',outro:'Outro' }[t.cat] || t.cat;
   const histBadge = t.historico && t.historico.length > 0
-    ? `<span class="badge badge-hist" title="${t.historico.length} alteração(ões)">↺ ${t.historico.length}</span>` : '';
+    ? '<span class="badge badge-hist" title="' + t.historico.length + ' alteração(ões)">↺ ' + t.historico.length + '</span>' : '';
+  const tratBadge = t.tratativa
+    ? '<span class="badge badge-tratativa">📋 ' + fmtDateShort(t.tratativa) + '</span>' : '';
 
-  return `
-    <div class="task-card prio-${t.prio} ${status === 'overdue' ? 'overdue' : ''} ${t.done ? 'done' : ''}" onclick="openDetail('${t.id}')">
-      <div class="task-info">
-        <div class="task-header">
-          <span class="task-title">${esc(t.title)}</span>
-          ${statusBadge(status)}
-          ${t.visibility === 'private' ? '<span class="badge badge-private">🔒 Privado</span>' : ''}
-          ${histBadge}
-        </div>
-        ${t.desc ? `<div class="task-desc">${esc(t.desc)}</div>` : ''}
-        <div class="task-meta">
-          <span>📁 ${catLabel}</span>
-          <span>📅 ${fmtDate(t.date)}</span>
-          ${tl ? `<span class="highlight">→ ${tl}</span>` : ''}
-          ${t.proc ? `<span>📎 ${esc(t.proc)}</span>` : ''}
-          ${respNames ? `<span>👥 ${esc(respNames)}</span>` : ''}
-          <span>✍ ${esc(t.createdBy || '')}</span>
-        </div>
-      </div>
-      <div class="task-actions">
-        ${canEdit ? `
-          <button class="icon-btn done-btn" title="${t.done ? 'Reabrir' : 'Concluir'}" onclick="event.stopPropagation();toggleDone('${t.id}')">${t.done ? '↩' : '✓'}</button>
-          <button class="icon-btn edit-btn" title="Editar / Estender prazo" onclick="event.stopPropagation();openEditModal('${t.id}')">✎</button>
-          <button class="icon-btn transfer-btn" title="Transferir responsável" onclick="event.stopPropagation();openTransferModal('${t.id}')">⇄</button>
-        ` : ''}
-        ${canDelete ? `<button class="icon-btn del-btn" title="Excluir" onclick="event.stopPropagation();deleteTask('${t.id}')">✕</button>` : ''}
-      </div>
-    </div>`;
+  return '<div class="task-card prio-' + t.prio + (status === 'overdue' ? ' overdue' : '') + (t.done ? ' done' : '') + '" onclick="openDetail(\'' + t.id + '\')">' +
+    '<div class="task-info">' +
+      '<div class="task-header">' +
+        '<span class="task-title">' + esc(t.title) + '</span>' +
+        statusBadge(status) +
+        (t.visibility === 'private' ? '<span class="badge badge-private">🔒 Privado</span>' : '') +
+        histBadge + tratBadge +
+      '</div>' +
+      (t.desc ? '<div class="task-desc">' + esc(t.desc) + '</div>' : '') +
+      '<div class="task-meta">' +
+        '<span>📁 ' + catLabel + '</span>' +
+        '<span>⚠️ Prazo fatal: ' + fmtDate(t.date) + '</span>' +
+        (t.tratativa ? '<span class="highlight">📋 Tratativa: ' + fmtDate(t.tratativa) + '</span>' : '') +
+        (tl ? '<span class="highlight">→ ' + tl + '</span>' : '') +
+        (t.proc ? '<span>📎 ' + esc(t.proc) + '</span>' : '') +
+        (respNames ? '<span>👥 ' + esc(respNames) + '</span>' : '') +
+        '<span>✍ ' + esc(t.createdBy || '') + '</span>' +
+      '</div>' +
+    '</div>' +
+    '<div class="task-actions">' +
+      (canEdit ? '<button class="icon-btn done-btn" title="' + (t.done ? 'Reabrir' : 'Concluir') + '" onclick="event.stopPropagation();toggleDone(\'' + t.id + '\')">' + (t.done ? '↩' : '✓') + '</button>' +
+        '<button class="icon-btn edit-btn" title="Editar / Estender prazo" onclick="event.stopPropagation();openEditModal(\'' + t.id + '\')">✎</button>' +
+        '<button class="icon-btn transfer-btn" title="Transferir responsável" onclick="event.stopPropagation();openTransferModal(\'' + t.id + '\')">⇄</button>' : '') +
+      (canDelete ? '<button class="icon-btn del-btn" title="Excluir" onclick="event.stopPropagation();deleteTask(\'' + t.id + '\')">✕</button>' : '') +
+    '</div></div>';
+}
+
+// =============================================
+// KANBAN SEMANAL
+// =============================================
+function renderKanban() {
+  const area = document.getElementById('kanbanArea');
+  if (!area || !currentUser) return;
+
+  const days    = getWeekDays(kanbanWeekOffset);
+  const weekStr = fmtWeekRange(days);
+  const now     = new Date();
+
+  const visibleTasks  = tasks.filter(t => canViewTask(t) && !t.done);
+  const backlogTasks  = visibleTasks.filter(t => !t.tratativa);
+  const tasksInWeek   = [[], [], [], [], []];
+
+  visibleTasks.filter(t => t.tratativa).forEach(t => {
+    const td  = new Date(t.tratativa);
+    const idx = days.findIndex(d => isSameDay(d, td));
+    if (idx >= 0) tasksInWeek[idx].push(t);
+  });
+
+  let html = '<div class="kanban-header">' +
+    '<button class="kanban-nav-btn" onclick="kanbanWeek(-1)">‹</button>' +
+    '<div class="kanban-week-label">' +
+      '<span class="kanban-week-range">' + weekStr + '</span>' +
+      (kanbanWeekOffset === 0 ? '<span class="kanban-current-badge">Semana atual</span>' : '') +
+      (kanbanWeekOffset !== 0 ? '<button class="kanban-today-btn" onclick="kanbanWeek(0)">Semana atual</button>' : '') +
+    '</div>' +
+    '<button class="kanban-nav-btn" onclick="kanbanWeek(1)">›</button>' +
+  '</div>' +
+  '<div class="kanban-board">';
+
+  // Coluna Backlog
+  html += '<div class="kanban-col kanban-backlog" ' +
+    'ondragover="event.preventDefault();this.classList.add(\'drag-over\')" ' +
+    'ondragleave="this.classList.remove(\'drag-over\')" ' +
+    'ondrop="onDropColumn(event,null)">' +
+    '<div class="kanban-col-header">' +
+      '<span class="kanban-col-title">📥 Backlog</span>' +
+      '<span class="kanban-col-count">' + backlogTasks.length + '</span>' +
+    '</div>' +
+    '<div class="kanban-col-body">' +
+      backlogTasks.map(t => renderKanbanCard(t, now)).join('') +
+      (backlogTasks.length === 0 ? '<div class="kanban-empty">Sem tarefas pendentes</div>' : '') +
+    '</div></div>';
+
+  const dayNames = ['Segunda','Terça','Quarta','Quinta','Sexta'];
+  days.forEach((d, i) => {
+    const isToday  = isSameDay(d, now);
+    const isPast   = d < startOfDay(now) && !isToday;
+    const dayTasks = tasksInWeek[i];
+    const overdueCount = dayTasks.filter(() => isPast).length;
+
+    html += '<div class="kanban-col' + (isToday ? ' kanban-today' : '') + (isPast ? ' kanban-past' : '') + '" ' +
+      'ondragover="event.preventDefault();this.classList.add(\'drag-over\')" ' +
+      'ondragleave="this.classList.remove(\'drag-over\')" ' +
+      'ondrop="onDropColumn(event,\'' + d.toISOString().slice(0,10) + '\')">' +
+      '<div class="kanban-col-header">' +
+        '<div>' +
+          '<div class="kanban-col-dayname">' + dayNames[i] + '</div>' +
+          '<div class="kanban-col-date' + (isToday ? ' kanban-col-date-today' : '') + '">' +
+            d.getDate().toString().padStart(2,'0') + '/' + (d.getMonth()+1).toString().padStart(2,'0') +
+          '</div>' +
+        '</div>' +
+        '<div style="display:flex;align-items:center;gap:6px">' +
+          (overdueCount > 0 ? '<span class="kanban-col-overdue-badge" title="Tratativas não realizadas">!</span>' : '') +
+          '<span class="kanban-col-count">' + dayTasks.length + '</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="kanban-col-body">' +
+        dayTasks.map(t => renderKanbanCard(t, now)).join('') +
+        (dayTasks.length === 0 ? '<div class="kanban-empty">Arraste aqui</div>' : '') +
+      '</div></div>';
+  });
+
+  html += '</div>'; // fecha kanban-board
+  area.innerHTML = html;
+}
+
+function renderKanbanCard(t, now) {
+  const deadline  = new Date(t.date);
+  const daysLeft  = Math.ceil((deadline - now) / 86400000);
+  const isOverdue = deadline < now;
+  const prioColor = { low:'var(--ok)', medium:'var(--warn)', high:'var(--danger)' }[t.prio] || 'var(--muted)';
+  const respNames = Array.isArray(t.responsaveis) ? t.responsaveis.map(e => getUserName(e)).join(', ') : '';
+
+  let dlClass = '';
+  if (isOverdue) dlClass = 'kcard-deadline-overdue';
+  else if (daysLeft <= 1) dlClass = 'kcard-deadline-soon';
+  else if (daysLeft <= 3) dlClass = 'kcard-deadline-warn';
+
+  return '<div class="kanban-card kprio-' + t.prio + (isOverdue ? ' kcard-overdue' : '') + '" ' +
+    'draggable="true" ' +
+    'ondragstart="onDragStart(event,\'' + t.id + '\')" ' +
+    'ondragend="onDragEnd(event)" ' +
+    'onclick="openDetail(\'' + t.id + '\')">' +
+    '<div class="kcard-prio-bar" style="background:' + prioColor + '"></div>' +
+    '<div class="kcard-body">' +
+      '<div class="kcard-title">' + esc(t.title) + '</div>' +
+      (t.proc ? '<div class="kcard-proc">📎 ' + esc(t.proc) + '</div>' : '') +
+      '<div class="kcard-footer">' +
+        '<span class="kcard-deadline ' + dlClass + '">⚠️ ' + fmtDateShort(t.date) + '</span>' +
+        (respNames ? '<span class="kcard-resp">👤 ' + esc(respNames) + '</span>' : '') +
+      '</div>' +
+    '</div></div>';
+}
+
+function kanbanWeek(val) {
+  if (val === 0) kanbanWeekOffset = 0;
+  else kanbanWeekOffset += val;
+  renderKanban();
+}
+
+// =============================================
+// DRAG & DROP KANBAN
+// =============================================
+function onDragStart(event, taskId) {
+  draggedTaskId = taskId;
+  event.dataTransfer.effectAllowed = 'move';
+  setTimeout(() => { if (event.target) event.target.style.opacity = '0.4'; }, 0);
+}
+
+function onDragEnd(event) {
+  if (event.target) event.target.style.opacity = '';
+  document.querySelectorAll('.kanban-col').forEach(col => col.classList.remove('drag-over'));
+}
+
+function onDropColumn(event, dateStr) {
+  event.preventDefault();
+  document.querySelectorAll('.kanban-col').forEach(col => col.classList.remove('drag-over'));
+  if (!draggedTaskId) return;
+
+  const t = tasks.find(x => x.id == draggedTaskId);
+  if (!t || !canEditTask(t)) {
+    showToast('🚫', 'Sem permissão', 'Você não pode mover esta tarefa.', 'warn');
+    draggedTaskId = null;
+    return;
+  }
+
+  const tratativa = dateStr ? dateStr + 'T12:00' : null;
+  updateTaskFirebase(draggedTaskId, { tratativa });
+  draggedTaskId = null;
+
+  const msg = dateStr ? 'Tratativa agendada para ' + fmtDateShort(tratativa) : 'Tarefa movida para Backlog';
+  showToast('📋', 'Tratativa atualizada', msg, 'ok');
 }
 
 // =============================================
@@ -668,7 +874,7 @@ function updateStats() {
   const banner = document.getElementById('alertBanner');
   if (banner) {
     if (over > 0) {
-      document.getElementById('alertText').textContent = `${over} prazo${over > 1 ? 's' : ''} em atraso!`;
+      document.getElementById('alertText').textContent = over + ' prazo' + (over > 1 ? 's' : '') + ' em atraso!';
       banner.classList.add('show');
     } else banner.classList.remove('show');
   }
@@ -684,18 +890,17 @@ function checkAlerts() {
     const deadline   = new Date(t.date);
     const alertKey   = t.id + '-alert';
     const overdueKey = t.id + '-overdue';
-
     if (t.alertMin > 0 && !notifiedKeys.has(alertKey)) {
       const alertTime = new Date(deadline - t.alertMin * 60000);
       if (now >= alertTime && now < deadline) {
         const mins = Math.round((deadline - now) / 60000);
-        const msg = mins >= 60 ? `${Math.round(mins / 60)}h restantes` : `${mins}min restantes`;
-        showToast('🔔', 'Prazo se aproximando', `${t.title} — ${msg}`, 'warn');
+        const msg = mins >= 60 ? Math.round(mins / 60) + 'h restantes' : mins + 'min restantes';
+        showToast('🔔', 'Prazo se aproximando', t.title + ' — ' + msg, 'warn');
         notifiedKeys.add(alertKey); saveNotified(); sendEmailAlert(t, msg);
       }
     }
     if (!notifiedKeys.has(overdueKey) && now > deadline) {
-      showToast('🚨', 'Prazo vencido!', `${t.title} — venceu em ${fmtDate(t.date)}`, 'danger');
+      showToast('🚨', 'Prazo vencido!', t.title + ' — venceu em ' + fmtDate(t.date), 'danger');
       notifiedKeys.add(overdueKey); saveNotified(); sendEmailOverdue(t);
     }
   });
@@ -724,13 +929,13 @@ async function sendEmailAlert(task, timeMsg) {
   for (const email of task.emails) {
     try {
       await emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateId, {
-        to_email: email, to_name: getUserName(email),
-        subject: `⏰ Prazo se aproximando: ${task.title}`,
+        to_email: email, to_name: getUserFullName(email),
+        subject: '⏰ Prazo se aproximando: ' + task.title,
         task_name: task.title, task_date: fmtDate(task.date),
         task_proc: task.proc || '—',
-        task_resp: Array.isArray(task.responsaveis) ? task.responsaveis.map(getUserName).join(', ') : '—',
+        task_resp: Array.isArray(task.responsaveis) ? task.responsaveis.map(getUserFullName).join(', ') : '—',
         time_msg: timeMsg,
-        message: `O prazo "${task.title}" vence em ${fmtDate(task.date)} (${timeMsg}).`
+        message: 'O prazo "' + task.title + '" vence em ' + fmtDate(task.date) + ' (' + timeMsg + ').'
       });
     } catch (e) { console.warn('E-mail erro:', e); }
   }
@@ -742,13 +947,13 @@ async function sendEmailOverdue(task) {
   for (const email of task.emails) {
     try {
       await emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateId, {
-        to_email: email, to_name: getUserName(email),
-        subject: `🚨 PRAZO VENCIDO: ${task.title}`,
+        to_email: email, to_name: getUserFullName(email),
+        subject: '🚨 PRAZO VENCIDO: ' + task.title,
         task_name: task.title, task_date: fmtDate(task.date),
         task_proc: task.proc || '—',
-        task_resp: Array.isArray(task.responsaveis) ? task.responsaveis.map(getUserName).join(', ') : '—',
+        task_resp: Array.isArray(task.responsaveis) ? task.responsaveis.map(getUserFullName).join(', ') : '—',
         time_msg: 'PRAZO VENCIDO',
-        message: `ATENÇÃO: O prazo "${task.title}" venceu em ${fmtDate(task.date)} e não foi concluído!`
+        message: 'ATENÇÃO: O prazo "' + task.title + '" venceu em ' + fmtDate(task.date) + ' e não foi concluído!'
       });
     } catch (e) { console.warn('E-mail erro:', e); }
   }
@@ -772,22 +977,26 @@ function statusBadge(status) {
     soon:['badge-soon','◎ Em breve'], ok:['badge-ok','○ No prazo'], done:['badge-done','✓ Concluído']
   };
   const [cls, lbl] = map[status];
-  return `<span class="badge ${cls}">${lbl}</span>`;
+  return '<span class="badge ' + cls + '">' + lbl + '</span>';
 }
 
 function fmtDate(d) {
   return new Date(d).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
 }
 
+function fmtDateShort(d) {
+  return new Date(d).toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit' });
+}
+
 function timeLeft(task) {
   if (task.done) return '';
   const diff = new Date(task.date) - new Date();
   if (diff < 0) {
-    const abs = Math.abs(diff), h = Math.floor(abs / 3600000), m = Math.floor((abs % 3600000) / 60000);
-    return h > 48 ? `${Math.floor(h / 24)}d atrás` : h > 0 ? `${h}h ${m}m atrás` : `${m}m atrás`;
+    const abs = Math.abs(diff), h = Math.floor(abs/3600000), m = Math.floor((abs%3600000)/60000);
+    return h > 48 ? Math.floor(h/24) + 'd atrás' : h > 0 ? h + 'h ' + m + 'm atrás' : m + 'm atrás';
   }
-  const h = Math.floor(diff / 3600000), m = Math.floor((diff % 3600000) / 60000);
-  return h > 48 ? `em ${Math.floor(h / 24)}d` : h > 0 ? `em ${h}h ${m}m` : `em ${m}m`;
+  const h = Math.floor(diff/3600000), m = Math.floor((diff%3600000)/60000);
+  return h > 48 ? 'em ' + Math.floor(h/24) + 'd' : h > 0 ? 'em ' + h + 'h ' + m + 'm' : 'em ' + m + 'm';
 }
 
 function esc(s) {
@@ -826,17 +1035,18 @@ function openDetail(id) {
   const catLabel  = { email:'E-mail','prazo-marca':'Prazo Marcas',reuniao:'Reunião',outro:'Outro' }[t.cat] || t.cat;
   const prioLabel = { low:'Baixa', medium:'Média', high:'Alta' }[t.prio] || t.prio;
   const prioColor = { low:'var(--ok)', medium:'var(--warn)', high:'var(--danger)' }[t.prio];
-  const respNames = Array.isArray(t.responsaveis) ? t.responsaveis.map(e => getUserName(e)).join(', ') : (t.responsaveis || '—');
+  const respNames = Array.isArray(t.responsaveis) ? t.responsaveis.map(e => getUserFullName(e)).join(', ') : (t.responsaveis || '—');
 
   document.getElementById('detail-title').textContent = t.title;
   document.getElementById('detail-status-badge').outerHTML =
-    `<span id="detail-status-badge">${statusBadge(status)}${t.visibility === 'private' ? '<span class="badge badge-private">🔒 Privado</span>' : ''}</span>`;
-  document.getElementById('detail-date').textContent = fmtDate(t.date);
+    '<span id="detail-status-badge">' + statusBadge(status) + (t.visibility === 'private' ? '<span class="badge badge-private">🔒 Privado</span>' : '') + '</span>';
+  document.getElementById('detail-date').textContent      = fmtDate(t.date);
+  document.getElementById('detail-tratativa').textContent = t.tratativa ? fmtDate(t.tratativa) : '—';
 
   const tlColor = status === 'overdue' ? 'var(--danger)' : status === 'today' ? 'var(--warn)' : 'var(--ok)';
-  document.getElementById('detail-timeleft').innerHTML = tl ? `<span style="color:${tlColor}">${tl}</span>` : '—';
+  document.getElementById('detail-timeleft').innerHTML = tl ? '<span style="color:' + tlColor + '">' + tl + '</span>' : '—';
   document.getElementById('detail-cat').textContent  = catLabel;
-  document.getElementById('detail-prio').innerHTML   = `<span style="color:${prioColor};font-weight:700">${prioLabel}</span>`;
+  document.getElementById('detail-prio').innerHTML   = '<span style="color:' + prioColor + ';font-weight:700">' + prioLabel + '</span>';
   document.getElementById('detail-proc').textContent = t.proc || '—';
   document.getElementById('detail-resp').textContent = respNames;
   document.getElementById('detail-created-by').textContent = t.createdBy || '—';
@@ -850,13 +1060,11 @@ function openDetail(id) {
 
   const hist = document.getElementById('detail-historico');
   if (t.historico && t.historico.length > 0) {
-    hist.innerHTML = t.historico.map(h => `
-      <div class="hist-item">
-        <span class="hist-date">${h.data}</span>
-        <span class="hist-msg">${esc(h.justificativa)}</span>
-        <span class="hist-by">por ${esc(h.por)}</span>
-        ${h.prazoAnterior ? `<div style="font-size:0.65rem;color:var(--muted);margin-top:3px">Prazo: ${fmtDate(h.prazoAnterior)} → ${fmtDate(h.prazoNovo)}</div>` : ''}
-      </div>`).join('');
+    hist.innerHTML = t.historico.map(h =>
+      '<div class="hist-item"><span class="hist-date">' + h.data + '</span><span class="hist-msg">' + esc(h.justificativa) + '</span><span class="hist-by">por ' + esc(h.por) + '</span>' +
+      (h.prazoAnterior ? '<div style="font-size:0.65rem;color:var(--muted);margin-top:3px">Prazo: ' + fmtDate(h.prazoAnterior) + ' → ' + fmtDate(h.prazoNovo) + '</div>' : '') +
+      '</div>'
+    ).join('');
   } else {
     hist.innerHTML = '<p style="color:var(--muted);font-size:0.72rem;padding:8px 0">Nenhuma alteração registrada.</p>';
   }
@@ -897,11 +1105,11 @@ function closeDetail() {
   document.getElementById('detailOverlay').style.display = 'none';
 }
 
-function showToast(icon, title, msg, type = 'info') {
+function showToast(icon, title, msg, type) {
   const c = document.getElementById('toastContainer');
   const t = document.createElement('div');
-  t.className = `toast toast-${type}`;
-  t.innerHTML = `<div class="toast-icon">${icon}</div><div><div class="toast-title">${title}</div><div class="toast-msg">${msg}</div></div>`;
+  t.className = 'toast toast-' + (type || 'info');
+  t.innerHTML = '<div class="toast-icon">' + icon + '</div><div><div class="toast-title">' + title + '</div><div class="toast-msg">' + msg + '</div></div>';
   c.appendChild(t);
   setTimeout(() => { t.style.animation = 'toastOut 0.3s ease forwards'; setTimeout(() => t.remove(), 300); }, 5000);
 }

@@ -59,6 +59,16 @@
         <span class="btn-new-icon">+</span> Nova Tarefa
       </button>
 
+      <!-- VIEW SWITCHER -->
+      <div class="view-switcher">
+        <button class="view-btn active" data-view="list" onclick="setView('list')">
+          ☰ Lista
+        </button>
+        <button class="view-btn" data-view="kanban" onclick="setView('kanban')">
+          ⊞ Kanban
+        </button>
+      </div>
+
       <!-- OVERVIEW -->
       <div class="stats-grid">
         <div class="stat-box ok">
@@ -93,36 +103,40 @@
 
     <!-- MAIN -->
     <main class="main-content">
-      <div class="toolbar">
-        <h2 class="toolbar-title">Prazos</h2>
 
-        <!-- Filtros de status -->
+      <!-- TOOLBAR LISTA -->
+      <div class="toolbar" id="listToolbar">
+        <h2 class="toolbar-title">Prazos</h2>
         <div class="filters">
           <button class="filter-btn active" data-filter="all"     onclick="setFilter(this)">Todos</button>
           <button class="filter-btn"        data-filter="active"  onclick="setFilter(this)">Ativos</button>
           <button class="filter-btn"        data-filter="overdue" onclick="setFilter(this)">Atrasados</button>
           <button class="filter-btn"        data-filter="done"    onclick="setFilter(this)">Concluídos</button>
         </div>
-
-        <!-- Filtros de prioridade -->
         <div class="filters">
           <button class="prio-filter-btn active" data-prio="all"    onclick="setPrioFilter(this)">Todas</button>
           <button class="prio-filter-btn pf-low"  data-prio="low"   onclick="setPrioFilter(this)">Baixa</button>
           <button class="prio-filter-btn pf-med"  data-prio="medium"onclick="setPrioFilter(this)">Média</button>
           <button class="prio-filter-btn pf-high" data-prio="high"  onclick="setPrioFilter(this)">Alta</button>
         </div>
+        <input class="search-input" type="text" id="searchInput" placeholder="Buscar..." oninput="render()">
 
         <!-- Filtro de responsável — visível só para ADM -->
-        <div class="filters" id="admin-resp-filter" style="display:none">
-          <select id="filter-resp" class="search-input" style="width:auto;min-width:160px" onchange="render()">
+        <div id="admin-resp-filter" style="display:none">
+          <select id="filter-resp" class="search-input" style="width:auto;min-width:170px" onchange="render()">
             <option value="all">👥 Todos os responsáveis</option>
           </select>
         </div>
-
-        <input class="search-input" type="text" id="searchInput" placeholder="Buscar..." oninput="render()">
       </div>
 
-      <div id="taskList" class="task-list"></div>
+      <!-- ÁREA LISTA -->
+      <div id="listArea">
+        <div id="taskList" class="task-list"></div>
+      </div>
+
+      <!-- ÁREA KANBAN -->
+      <div id="kanbanArea" style="display:none"></div>
+
     </main>
   </div>
 </div>
@@ -144,17 +158,24 @@
           <label>Descrição</label>
           <textarea id="inp-desc" placeholder="Detalhes ou observações..."></textarea>
         </div>
+
+        <!-- PRAZO FATAL -->
         <div class="field">
-          <label>Prazo *</label>
+          <label>⚠️ Prazo Fatal *</label>
           <input type="datetime-local" id="inp-date">
+          <span class="field-hint">Data limite real — requer justificativa para alterar</span>
         </div>
+
+        <!-- DATA DE TRATATIVA -->
+        <div class="field">
+          <label>📋 Data de Tratativa</label>
+          <input type="datetime-local" id="inp-tratativa">
+          <span class="field-hint">Quando você vai trabalhar nisso (pode arrastar no kanban)</span>
+        </div>
+
         <div class="field">
           <label>Assunto / Referência</label>
           <input type="text" id="inp-proc" placeholder="Assunto">
-        </div>
-        <div class="field">
-          <label>Responsáveis</label>
-          <div id="inp-responsaveis" class="checkbox-team"></div>
         </div>
         <div class="field">
           <label>Categoria</label>
@@ -164,6 +185,10 @@
             <option value="reuniao">Reunião</option>
             <option value="outro">Outro</option>
           </select>
+        </div>
+        <div class="field">
+          <label>Responsáveis</label>
+          <div id="inp-responsaveis" class="checkbox-team"></div>
         </div>
         <div class="field">
           <label>Prioridade</label>
@@ -222,10 +247,14 @@
           <input type="text" id="edit-title">
         </div>
         <div class="field">
-          <label>Novo Prazo</label>
+          <label>⚠️ Prazo Fatal</label>
           <input type="datetime-local" id="edit-date">
         </div>
         <div class="field">
+          <label>📋 Data de Tratativa</label>
+          <input type="datetime-local" id="edit-tratativa">
+        </div>
+        <div class="field span-2">
           <label>Descrição</label>
           <input type="text" id="edit-desc">
         </div>
@@ -235,7 +264,7 @@
         </div>
         <div class="field span-2">
           <label>Justificativa da alteração *</label>
-          <textarea id="edit-justif" placeholder="Explique o motivo da alteração do prazo..." style="min-height:80px"></textarea>
+          <textarea id="edit-justif" placeholder="Explique o motivo da alteração..." style="min-height:80px"></textarea>
         </div>
         <div class="field span-2">
           <label>Histórico de alterações</label>
@@ -285,8 +314,12 @@
     <div class="modal-body">
       <div class="detail-grid">
         <div class="detail-item">
-          <div class="detail-lbl">Prazo</div>
+          <div class="detail-lbl">⚠️ Prazo Fatal</div>
           <div class="detail-val" id="detail-date"></div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-lbl">📋 Data de Tratativa</div>
+          <div class="detail-val" id="detail-tratativa"></div>
         </div>
         <div class="detail-item">
           <div class="detail-lbl">Tempo restante</div>
