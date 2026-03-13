@@ -289,31 +289,58 @@ function updateSidebarProfile() {
 function handleAvatarUpload(input) {
   const file = input.files[0];
   if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    const data = e.target.result;
+
+  // Reduz a imagem antes de salvar para evitar problemas de tamanho
+  const canvas = document.createElement('canvas');
+  const ctx    = canvas.getContext('2d');
+  const img    = new Image();
+  const url    = URL.createObjectURL(file);
+
+  img.onload = () => {
+    const MAX = 128;
+    const ratio = Math.min(MAX / img.width, MAX / img.height);
+    canvas.width  = img.width  * ratio;
+    canvas.height = img.height * ratio;
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    URL.revokeObjectURL(url);
+
+    const data = canvas.toDataURL('image/jpeg', 0.8);
+
+    // Salva sempre no localStorage (imediato e confiável)
+    localStorage.setItem('avatar-' + currentUser.email, data);
+
+    // Tenta salvar no Firebase também (sync entre dispositivos)
     if (db) {
-      db.ref('avatars/' + currentUser.email.replace(/[.#$\[\]]/g, '_')).set(data);
-    } else {
-      localStorage.setItem('avatar-' + currentUser.email, data);
+      try {
+        db.ref('avatars/' + currentUser.email.replace(/[.#$\[\]]/g, '_')).set(data)
+          .catch(err => console.warn('Avatar Firebase erro:', err));
+      } catch(e) { console.warn('Avatar Firebase erro:', e); }
     }
+
     const avatarEl = document.getElementById('sidebar-avatar');
     if (avatarEl) avatarEl.src = data;
   };
-  reader.readAsDataURL(file);
+  img.src = url;
 }
 
 function loadAvatar() {
   if (!currentUser) return;
   const avatarEl = document.getElementById('sidebar-avatar');
   if (!avatarEl) return;
+
+  // Carrega do localStorage primeiro (instantâneo)
+  const local = localStorage.getItem('avatar-' + currentUser.email);
+  if (local) { avatarEl.src = local; return; }
+
+  // Se não tiver local, tenta buscar do Firebase
   if (db) {
     db.ref('avatars/' + currentUser.email.replace(/[.#$\[\]]/g, '_')).once('value', snap => {
-      if (snap.val()) avatarEl.src = snap.val();
-    });
-  } else {
-    const saved = localStorage.getItem('avatar-' + currentUser.email);
-    if (saved) avatarEl.src = saved;
+      if (snap.val()) {
+        avatarEl.src = snap.val();
+        // Salva localmente para próximas vezes
+        localStorage.setItem('avatar-' + currentUser.email, snap.val());
+      }
+    }).catch(err => console.warn('Avatar load erro:', err));
   }
 }
 
