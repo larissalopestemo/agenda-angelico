@@ -1030,3 +1030,68 @@ select option { background: var(--surface2); }
 
 /* Card cursor pointer */
 .task-card { cursor: pointer; }
+
+/* =============================================
+   KANBAN SEMANAL
+   ============================================= */
+.kanban-board {
+  display: grid;
+  grid-template-columns: 200px repeat(5, 1fr);
+  gap: 8px;
+  align-items: start;
+  min-height: 400px;
+}
+
+.kanban-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-height: 200px;
+}
+
+.kanban-col-header {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px 10px 0 0;
+  padding: 12px 14px;
+  text-align: center;
+  position: sticky;
+  top: 0;
+}
+
+.kanban-col-header.is-today {
+  border-color: var(--accent);
+  background: rgba(200,169,81,0.1);
+}
+
+.kanban-day-name {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.kanban-col-header.is-today .kanban-day-name {
+  color: var(--accent);
+}
+
+.kanban-day-num {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+  margin-top: 2px;
+}
+
+.kanban-col-header.is-today .kanban-day-num {
+  color: var(--accent);
+}
+
+.kanban-day-count {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+  margin-top: 2px;
+}
