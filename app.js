@@ -289,6 +289,9 @@ function updateSidebarProfile() {
 function handleAvatarUpload(input) {
   const file = input.files[0];
   if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const data = e.target.result;
 
   // Reduz a imagem antes de salvar para evitar problemas de tamanho
   const canvas = document.createElement('canvas');
@@ -311,6 +314,9 @@ function handleAvatarUpload(input) {
 
     // Tenta salvar no Firebase também (sync entre dispositivos)
     if (db) {
+      db.ref('avatars/' + currentUser.email.replace(/[.#$\[\]]/g, '_')).set(data);
+    } else {
+      localStorage.setItem('avatar-' + currentUser.email, data);
       try {
         db.ref('avatars/' + currentUser.email.replace(/[.#$\[\]]/g, '_')).set(data)
           .catch(err => console.warn('Avatar Firebase erro:', err));
@@ -320,6 +326,7 @@ function handleAvatarUpload(input) {
     const avatarEl = document.getElementById('sidebar-avatar');
     if (avatarEl) avatarEl.src = data;
   };
+  reader.readAsDataURL(file);
   img.src = url;
 }
 
@@ -335,6 +342,11 @@ function loadAvatar() {
   // Se não tiver local, tenta buscar do Firebase
   if (db) {
     db.ref('avatars/' + currentUser.email.replace(/[.#$\[\]]/g, '_')).once('value', snap => {
+      if (snap.val()) avatarEl.src = snap.val();
+    });
+  } else {
+    const saved = localStorage.getItem('avatar-' + currentUser.email);
+    if (saved) avatarEl.src = saved;
       if (snap.val()) {
         avatarEl.src = snap.val();
         // Salva localmente para próximas vezes
