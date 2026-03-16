@@ -53,23 +53,13 @@
 
     <!-- SIDEBAR -->
     <aside class="sidebar">
-
-      <!-- BOTÃO NOVA TAREFA -->
       <button class="btn-new-task" onclick="openNewTaskModal()">
         <span class="btn-new-icon">+</span> Nova Tarefa
       </button>
-
-      <!-- VIEW SWITCHER -->
       <div class="view-switcher">
-        <button class="view-btn active" data-view="list" onclick="setView('list')">
-          ☰ Lista
-        </button>
-        <button class="view-btn" data-view="kanban" onclick="setView('kanban')">
-          ⊞ Kanban
-        </button>
+        <button class="view-btn active" data-view="list" onclick="setView('list')">☰ Lista</button>
+        <button class="view-btn" data-view="kanban" onclick="setView('kanban')">⊞ Kanban</button>
       </div>
-
-      <!-- OVERVIEW -->
       <div class="stats-grid">
         <div class="stat-box ok">
           <div class="stat-num" id="stat-total">0</div>
@@ -84,8 +74,6 @@
           <div class="stat-lbl">Atrasados</div>
         </div>
       </div>
-
-      <!-- PERFIL -->
       <div class="profile-box">
         <div class="profile-avatar-wrap" onclick="document.getElementById('avatarInput').click()" title="Clique para trocar a foto">
           <img id="sidebar-avatar" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Ccircle cx='20' cy='15' r='8' fill='%238B8FC4'/%3E%3Cellipse cx='20' cy='34' rx='13' ry='8' fill='%238B8FC4'/%3E%3C/svg%3E" alt="Avatar" class="profile-avatar">
@@ -98,7 +86,6 @@
           <div class="profile-role" id="sidebar-role">—</div>
         </div>
       </div>
-
     </aside>
 
     <!-- MAIN -->
@@ -114,14 +101,12 @@
           <button class="filter-btn"        data-filter="done"    onclick="setFilter(this)">Concluídos</button>
         </div>
         <div class="filters">
-          <button class="prio-filter-btn active" data-prio="all"    onclick="setPrioFilter(this)">Todas</button>
-          <button class="prio-filter-btn pf-low"  data-prio="low"   onclick="setPrioFilter(this)">Baixa</button>
-          <button class="prio-filter-btn pf-med"  data-prio="medium"onclick="setPrioFilter(this)">Média</button>
-          <button class="prio-filter-btn pf-high" data-prio="high"  onclick="setPrioFilter(this)">Alta</button>
+          <button class="prio-filter-btn active" data-prio="all"     onclick="setPrioFilter(this)">Todas</button>
+          <button class="prio-filter-btn pf-low"  data-prio="low"    onclick="setPrioFilter(this)">Baixa</button>
+          <button class="prio-filter-btn pf-med"  data-prio="medium" onclick="setPrioFilter(this)">Média</button>
+          <button class="prio-filter-btn pf-high" data-prio="high"   onclick="setPrioFilter(this)">Alta</button>
         </div>
         <input class="search-input" type="text" id="searchInput" placeholder="Buscar..." oninput="render()">
-
-        <!-- Filtro de responsável — visível só para ADM -->
         <div id="admin-resp-filter" style="display:none">
           <select id="filter-resp" class="search-input" style="width:auto;min-width:170px" onchange="render()">
             <option value="all">👥 Todos os responsáveis</option>
@@ -129,17 +114,11 @@
         </div>
       </div>
 
-      <!-- ÁREA LISTA -->
-      <div id="listArea">
-        <div id="taskList" class="task-list"></div>
-      </div>
-
-      <!-- ÁREA KANBAN -->
+      <div id="listArea"><div id="taskList" class="task-list"></div></div>
       <div id="kanbanArea" style="display:none"></div>
 
-      <!-- CONFIGURAÇÃO DO KANBAN — edite aqui os textos das colunas -->
       <template id="kanban-config"
-        data-backlog-title="📥 Tarefa sem data definida"
+        data-backlog-title="📥 Sem data de tratativa"
         data-backlog-empty="Sem data de tratativa definida"
         data-col-empty="Arraste aqui"
         data-week-current="Semana atual"
@@ -149,7 +128,6 @@
         data-day3="Quinta"
         data-day4="Sexta"
       ></template>
-
     </main>
   </div>
 </div>
@@ -163,6 +141,7 @@
     </div>
     <div class="modal-body">
       <div class="form-grid">
+
         <div class="field span-2">
           <label>Título *</label>
           <input type="text" id="inp-title" placeholder="Ex: E-mail — Acompanhar processo 123">
@@ -172,14 +151,11 @@
           <textarea id="inp-desc" placeholder="Detalhes ou observações..."></textarea>
         </div>
 
-        <!-- PRAZO FATAL -->
         <div class="field">
           <label>⚠️ Prazo Fatal *</label>
           <input type="datetime-local" id="inp-date">
           <span class="field-hint">Data limite real — requer justificativa para alterar</span>
         </div>
-
-        <!-- DATA DE TRATATIVA -->
         <div class="field">
           <label>📋 Data de Tratativa</label>
           <input type="datetime-local" id="inp-tratativa">
@@ -199,6 +175,7 @@
             <option value="outro">Outro</option>
           </select>
         </div>
+
         <div class="field">
           <label>Responsáveis</label>
           <div id="inp-responsaveis" class="checkbox-team"></div>
@@ -211,6 +188,7 @@
             <button class="prio-btn"             data-prio="high"   onclick="selectPrio(this)">Alta</button>
           </div>
         </div>
+
         <div class="field">
           <label>Aviso por e-mail</label>
           <select id="inp-alert" onchange="toggleCustomAlert(this)">
@@ -222,19 +200,53 @@
             <option value="custom">Personalizado...</option>
           </select>
           <div id="field-custom-alert" style="display:none;margin-top:8px">
-            <input type="datetime-local" id="inp-alert-custom" placeholder="Data e hora do lembrete">
+            <input type="datetime-local" id="inp-alert-custom">
           </div>
         </div>
-         <div class="field">
+
+        <!-- RECORRÊNCIA -->
+        <div class="field">
           <label>🔁 Recorrência</label>
-          <select id="inp-recorrencia">
+          <select id="inp-recorrencia" onchange="updateRecorrenciaUI('inp')">
             <option value="none">Sem recorrência</option>
             <option value="daily">Diária</option>
             <option value="weekly">Semanal</option>
             <option value="monthly">Mensal</option>
           </select>
-          <span class="field-hint">Ao concluir, uma nova tarefa é criada automaticamente com o próximo prazo</span>
+          <span class="field-hint">Ao concluir, nova tarefa é criada automaticamente</span>
+          <div id="inp-rec-weekday-wrap" style="display:none;margin-top:8px">
+            <label style="font-size:0.6rem;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted)">Dia da semana</label>
+            <select id="inp-rec-weekday" style="margin-top:4px">
+              <option value="1">Segunda-feira</option>
+              <option value="2">Terça-feira</option>
+              <option value="3">Quarta-feira</option>
+              <option value="4">Quinta-feira</option>
+              <option value="5">Sexta-feira</option>
+              <option value="6">Sábado</option>
+              <option value="0">Domingo</option>
+            </select>
+          </div>
+          <div id="inp-rec-monthday-wrap" style="display:none;margin-top:8px">
+            <label style="font-size:0.6rem;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted)">Dia do mês</label>
+            <select id="inp-rec-monthday" style="margin-top:4px">
+              <option value="1">Dia 1</option><option value="2">Dia 2</option><option value="3">Dia 3</option>
+              <option value="4">Dia 4</option><option value="5">Dia 5</option><option value="6">Dia 6</option>
+              <option value="7">Dia 7</option><option value="8">Dia 8</option><option value="9">Dia 9</option>
+              <option value="10">Dia 10</option><option value="11">Dia 11</option><option value="12">Dia 12</option>
+              <option value="13">Dia 13</option><option value="14">Dia 14</option><option value="15">Dia 15</option>
+              <option value="16">Dia 16</option><option value="17">Dia 17</option><option value="18">Dia 18</option>
+              <option value="19">Dia 19</option><option value="20">Dia 20</option><option value="21">Dia 21</option>
+              <option value="22">Dia 22</option><option value="23">Dia 23</option><option value="24">Dia 24</option>
+              <option value="25">Dia 25</option><option value="26">Dia 26</option><option value="27">Dia 27</option>
+              <option value="28">Dia 28</option>
+            </select>
+          </div>
+          <div id="inp-rec-hora-wrap" style="display:none;margin-top:8px">
+            <label style="font-size:0.6rem;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted)">Hora do prazo</label>
+            <input type="time" id="inp-rec-hora" value="18:00" style="margin-top:4px">
+          </div>
         </div>
+
         <div class="field span-2">
           <label>Notificar e-mails (separados por vírgula)</label>
           <input type="text" id="inp-emails" placeholder="email1@anlema.com.br, email2@anlema.com.br">
@@ -246,6 +258,7 @@
             <span>Prazo privado — somente ADM visualiza</span>
           </div>
         </div>
+
       </div>
     </div>
     <div class="modal-footer">
@@ -277,15 +290,49 @@
           <label>📋 Data de Tratativa</label>
           <input type="datetime-local" id="edit-tratativa">
         </div>
-        <div class="field">
+
+        <!-- RECORRÊNCIA EDITAR -->
+        <div class="field span-2">
           <label>🔁 Recorrência</label>
-          <select id="edit-recorrencia">
+          <select id="edit-recorrencia" onchange="updateRecorrenciaUI('edit')">
             <option value="none">Sem recorrência</option>
             <option value="daily">Diária</option>
             <option value="weekly">Semanal</option>
             <option value="monthly">Mensal</option>
           </select>
+          <div id="edit-rec-weekday-wrap" style="display:none;margin-top:8px">
+            <label style="font-size:0.6rem;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted)">Dia da semana</label>
+            <select id="edit-rec-weekday" style="margin-top:4px">
+              <option value="1">Segunda-feira</option>
+              <option value="2">Terça-feira</option>
+              <option value="3">Quarta-feira</option>
+              <option value="4">Quinta-feira</option>
+              <option value="5">Sexta-feira</option>
+              <option value="6">Sábado</option>
+              <option value="0">Domingo</option>
+            </select>
+          </div>
+          <div id="edit-rec-monthday-wrap" style="display:none;margin-top:8px">
+            <label style="font-size:0.6rem;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted)">Dia do mês</label>
+            <select id="edit-rec-monthday" style="margin-top:4px">
+              <option value="1">Dia 1</option><option value="2">Dia 2</option><option value="3">Dia 3</option>
+              <option value="4">Dia 4</option><option value="5">Dia 5</option><option value="6">Dia 6</option>
+              <option value="7">Dia 7</option><option value="8">Dia 8</option><option value="9">Dia 9</option>
+              <option value="10">Dia 10</option><option value="11">Dia 11</option><option value="12">Dia 12</option>
+              <option value="13">Dia 13</option><option value="14">Dia 14</option><option value="15">Dia 15</option>
+              <option value="16">Dia 16</option><option value="17">Dia 17</option><option value="18">Dia 18</option>
+              <option value="19">Dia 19</option><option value="20">Dia 20</option><option value="21">Dia 21</option>
+              <option value="22">Dia 22</option><option value="23">Dia 23</option><option value="24">Dia 24</option>
+              <option value="25">Dia 25</option><option value="26">Dia 26</option><option value="27">Dia 27</option>
+              <option value="28">Dia 28</option>
+            </select>
+          </div>
+          <div id="edit-rec-hora-wrap" style="display:none;margin-top:8px">
+            <label style="font-size:0.6rem;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted)">Hora do prazo</label>
+            <input type="time" id="edit-rec-hora" value="18:00" style="margin-top:4px">
+          </div>
         </div>
+
         <div class="field span-2">
           <label>Descrição</label>
           <input type="text" id="edit-desc">
@@ -332,6 +379,31 @@
   </div>
 </div>
 
+<!-- =================== MODAL JUSTIF DROP KANBAN =================== -->
+<div class="modal-overlay" id="modalDropJustif" style="display:none" onclick="if(event.target===this)cancelDropJustif()">
+  <div class="modal-box modal-sm">
+    <div class="modal-header">
+      <h3>⚠️ Tratativa após prazo fatal</h3>
+      <button class="modal-close" onclick="cancelDropJustif()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="background:rgba(224,82,82,0.08);border:1px solid rgba(224,82,82,0.25);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:0.78rem;line-height:1.5">
+        <div style="font-weight:700;color:var(--danger);margin-bottom:4px" id="drop-justif-title"></div>
+        <div style="color:var(--muted)" id="drop-justif-info"></div>
+      </div>
+      <div class="field">
+        <label>Justificativa *</label>
+        <textarea id="drop-justif-text" placeholder="Ex: Cliente solicitou prorrogação informal..." style="min-height:90px"></textarea>
+        <span class="field-hint">Será registrada no histórico da tarefa.</span>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-ghost" onclick="cancelDropJustif()">Cancelar</button>
+      <button class="btn-primary" onclick="confirmDropAfterDeadline()">Confirmar</button>
+    </div>
+  </div>
+</div>
+
 <!-- =================== POPUP DETALHE =================== -->
 <div class="modal-overlay" id="detailOverlay" style="display:none" onclick="if(event.target===this)closeDetail()">
   <div class="modal-box" style="max-width:580px">
@@ -358,16 +430,16 @@
           <div class="detail-val" id="detail-timeleft"></div>
         </div>
         <div class="detail-item">
+          <div class="detail-lbl">🔁 Recorrência</div>
+          <div class="detail-val" id="detail-recorrencia">—</div>
+        </div>
+        <div class="detail-item">
           <div class="detail-lbl">Categoria</div>
           <div class="detail-val" id="detail-cat"></div>
         </div>
         <div class="detail-item">
           <div class="detail-lbl">Prioridade</div>
           <div class="detail-val" id="detail-prio"></div>
-        </div>
-        <div class="detail-item">
-          <div class="detail-lbl">🔁 Recorrência</div>
-          <div class="detail-val" id="detail-recorrencia">—</div>
         </div>
         <div class="detail-item span-2">
           <div class="detail-lbl">Assunto / Referência</div>
@@ -386,12 +458,10 @@
           <div class="detail-val" id="detail-created-at"></div>
         </div>
       </div>
-
       <div id="detail-desc-section" style="margin-top:18px">
         <div class="detail-section-title">Descrição</div>
         <div class="detail-desc" id="detail-desc"></div>
       </div>
-
       <div style="margin-top:18px">
         <div class="detail-section-title">Histórico de Alterações</div>
         <div id="detail-historico" class="historico-box"></div>
@@ -405,38 +475,5 @@
 <div id="toastContainer" class="toast-container"></div>
 
 <script src="app.js"></script>
-  <div class="modal-overlay" id="modalDropJustif" style="display:none" onclick="if(event.target===this)cancelDropJustif()">
-  <div class="modal-box modal-sm">
-    <div class="modal-header">
-      <h3>⚠️ Tratativa após prazo fatal</h3>
-      <button class="modal-close" onclick="cancelDropJustif()">✕</button>
-    </div>
-    <div class="modal-body">
-      <div style="
-        background: rgba(224,82,82,0.08);
-        border: 1px solid rgba(224,82,82,0.25);
-        border-radius: 8px;
-        padding: 12px 14px;
-        margin-bottom: 16px;
-        font-size: 0.78rem;
-        line-height: 1.5;
-      ">
-        <div style="font-weight:700; color:var(--danger); margin-bottom:4px" id="drop-justif-title"></div>
-        <div style="color:var(--muted)" id="drop-justif-info"></div>
-      </div>
-      <div class="field">
-        <label>Justificativa *</label>
-        <textarea id="drop-justif-text"
-          placeholder="Ex: Cliente solicitou prorrogação informal, aguardando confirmação por escrito..."
-          style="min-height: 90px"></textarea>
-        <span class="field-hint">Essa justificativa será registrada no histórico da tarefa.</span>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn-ghost" onclick="cancelDropJustif()">Cancelar</button>
-      <button class="btn-primary" onclick="confirmDropAfterDeadline()">Confirmar</button>
-    </div>
-  </div>
-</div>
 </body>
 </html>
