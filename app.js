@@ -40,6 +40,7 @@ let notifiedKeys      = new Set();
 let currentView       = 'list'; // 'list' | 'kanban'
 let kanbanWeekOffset  = 0;
 let draggedTaskId     = null;
+let pendingDrop       = null; // { taskId, dateStr } — aguardando justificativa
 
 // =============================================
 // HELPERS
@@ -100,19 +101,8 @@ function getUserFullName(email) {
 }
 
 // =============================================
-// RECORRÊNCIA — calcula próximo prazo
+// RECORRÊNCIA
 // =============================================
-function calcNextDate(dateStr, recorrencia) {
-  const d = new Date(dateStr);
-  if (!d || isNaN(d)) return null;
-  switch (recorrencia) {
-    case 'daily':   d.setDate(d.getDate() + 1);   break;
-    case 'weekly':  d.setDate(d.getDate() + 7);   break;
-    case 'monthly': d.setMonth(d.getMonth() + 1); break;
-    default: return null;
-  }
-  return d.toISOString().slice(0, 16);
-}
 
 const RECORRENCIA_LABEL = {
   none:    'Sem recorrência',
@@ -120,6 +110,117 @@ const RECORRENCIA_LABEL = {
   weekly:  '🔁 Semanal',
   monthly: '🔁 Mensal',
 };
+
+const DIAS_SEMANA = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+
+/*
+  recConfig = {
+    type: 'none' | 'daily' | 'weekly' | 'monthly'
+    weekDay: 0-6  (só para weekly — 0=Dom...6=Sáb)
+    monthDay: 1-31 (só para monthly)
+    hora: 'HH:MM' (hora do prazo na task recriada)
+  }
+*/
+
+function calcNextDate(baseStr, recConfig) {
+  if (!recConfig || recConfig.type === 'none') return null;
+  const base = new Date(baseStr);
+  if (isNaN(base)) return null;
+
+  const hora  = recConfig.hora || '18:00';
+  const [hh, mm] = hora.split(':').map(Number);
+  const now   = new Date();
+
+  let next = new Date();
+  next.setSeconds(0); next.setMilliseconds(0);
+  next.setHours(hh, mm, 0, 0);
+
+  if (recConfig.type === 'daily') {
+    // Próximo dia após hoje (mesma hora)
+    next.setDate(now.getDate() + 1);
+
+  } else if (recConfig.type === 'weekly') {
+    const target = parseInt(recConfig.weekDay); // 0-6
+    const today  = now.getDay();
+    let diff = target - today;
+    if (diff <= 0) diff += 7; // sempre futuro
+    next.setDate(now.getDate() + diff);
+
+  } else if (recConfig.type === 'monthly') {
+    const targetDay = parseInt(recConfig.monthDay); // 1-31
+    // Tenta este mês
+    next.setDate(targetDay);
+    if (next <= now) {
+      // Já passou — vai pro mês seguinte
+      next.setMonth(next.getMonth() + 1);
+      next.setDate(targetDay);
+    }
+  }
+
+  return next.toISOString().slice(0, 16);
+}
+
+function fmtRecorrenciaDetalhe(task) {
+  if (!task.recConfig || task.recConfig.type === 'none') return 'Sem recorrência';
+  const cfg = task.recConfig;
+  if (cfg.type === 'daily')   return '🔁 Diária às ' + (cfg.hora || '18:00');
+  if (cfg.type === 'weekly')  return '🔁 Toda ' + DIAS_SEMANA[cfg.weekDay] + ' às ' + (cfg.hora || '18:00');
+  if (cfg.type === 'monthly') return '🔁 Todo dia ' + cfg.monthDay + ' às ' + (cfg.hora || '18:00');
+  return 'Sem recorrência';
+}
+
+// Lê o recConfig do formulário (prefixo: 'inp' ou 'edit')
+function readRecConfig(prefix) {
+  const typeEl = document.getElementById(prefix + '-recorrencia');
+  const type   = typeEl ? typeEl.value : 'none';
+  if (type === 'none' || type === 'daily') {
+    const horaEl = document.getElementById(prefix + '-rec-hora');
+    return { type, hora: horaEl ? horaEl.value : '18:00' };
+  }
+  if (type === 'weekly') {
+    const wdEl  = document.getElementById(prefix + '-rec-weekday');
+    const horaEl= document.getElementById(prefix + '-rec-hora');
+    return { type, weekDay: wdEl ? parseInt(wdEl.value) : 1, hora: horaEl ? horaEl.value : '18:00' };
+  }
+  if (type === 'monthly') {
+    const mdEl  = document.getElementById(prefix + '-rec-monthday');
+    const horaEl= document.getElementById(prefix + '-rec-hora');
+    return { type, monthDay: mdEl ? parseInt(mdEl.value) : 1, hora: horaEl ? horaEl.value : '18:00' };
+  }
+  return { type: 'none' };
+}
+
+// Preenche o recConfig num formulário
+function writeRecConfig(prefix, cfg) {
+  if (!cfg) return;
+  const typeEl = document.getElementById(prefix + '-recorrencia');
+  if (typeEl) { typeEl.value = cfg.type || 'none'; updateRecorrenciaUI(prefix); }
+  setTimeout(() => {
+    const horaEl = document.getElementById(prefix + '-rec-hora');
+    if (horaEl && cfg.hora) horaEl.value = cfg.hora;
+    if (cfg.type === 'weekly') {
+      const wdEl = document.getElementById(prefix + '-rec-weekday');
+      if (wdEl) wdEl.value = cfg.weekDay ?? 1;
+    }
+    if (cfg.type === 'monthly') {
+      const mdEl = document.getElementById(prefix + '-rec-monthday');
+      if (mdEl) mdEl.value = cfg.monthDay ?? 1;
+    }
+  }, 10);
+}
+
+// Mostra/oculta sub-campos conforme o tipo selecionado
+function updateRecorrenciaUI(prefix) {
+  const typeEl  = document.getElementById(prefix + '-recorrencia');
+  const type    = typeEl ? typeEl.value : 'none';
+  const wdWrap  = document.getElementById(prefix + '-rec-weekday-wrap');
+  const mdWrap  = document.getElementById(prefix + '-rec-monthday-wrap');
+  const horaWrap= document.getElementById(prefix + '-rec-hora-wrap');
+
+  if (wdWrap)   wdWrap.style.display   = type === 'weekly'  ? 'block' : 'none';
+  if (mdWrap)   mdWrap.style.display   = type === 'monthly' ? 'block' : 'none';
+  if (horaWrap) horaWrap.style.display = type !== 'none'    ? 'block' : 'none';
+}
 
 // =============================================
 // SEMANA UTILS
@@ -453,15 +554,15 @@ function addTask() {
   const visibility = (currentUser.role === 'admin' && privCheck && privCheck.checked) ? 'private' : 'shared';
 
   // Recorrência
-  const recSelEl   = document.getElementById('inp-recorrencia');
-  const recorrencia = recSelEl ? recSelEl.value : 'none';
+  const recConfig = readRecConfig('inp');
 
   const task = {
     title,
     desc:       document.getElementById('inp-desc').value.trim(),
     date,
     tratativa:  tratativa || null,
-    recorrencia,
+    recorrencia: recConfig.type, // mantém campo legado p/ badge
+    recConfig,
     responsaveis,
     proc:       document.getElementById('inp-proc').value.trim(),
     cat:        document.getElementById('inp-cat').value,
@@ -498,7 +599,7 @@ function resetForm() {
     const el = document.getElementById(id); if (el) el.value = '';
   });
   const recSel = document.getElementById('inp-recorrencia');
-  if (recSel) recSel.value = 'none';
+  if (recSel) { recSel.value = 'none'; updateRecorrenciaUI('inp'); }
   const container = document.getElementById('inp-responsaveis');
   if (container) container.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
   const priv = document.getElementById('inp-privado');
@@ -524,8 +625,8 @@ function openEditModal(id) {
   const editTratEl = document.getElementById('edit-tratativa');
   if (editTratEl) editTratEl.value = t.tratativa || '';
 
-  const editRecEl = document.getElementById('edit-recorrencia');
-  if (editRecEl) editRecEl.value = t.recorrencia || 'none';
+  // Carrega recorrência no modal editar
+  writeRecConfig('edit', t.recConfig || { type: t.recorrencia || 'none' });
 
   const container = document.getElementById('edit-responsaveis');
   if (container) {
@@ -581,11 +682,11 @@ function saveEdit() {
   responsaveis = sanitizeResponsaveis(responsaveis, true);
 
   const editTratEl  = document.getElementById('edit-tratativa');
-  const editRecEl   = document.getElementById('edit-recorrencia');
   const tratativa   = editTratEl ? (editTratEl.value || null) : t.tratativa;
-  const recorrencia = editRecEl  ? editRecEl.value : (t.recorrencia || 'none');
+  const recConfig   = readRecConfig('edit');
+  const recorrencia = recConfig.type;
 
-  updateTaskFirebase(id, { title, date, tratativa, recorrencia, desc, historico, responsaveis });
+  updateTaskFirebase(id, { title, date, tratativa, recorrencia, recConfig, desc, historico, responsaveis });
   showToast('✅', 'Prazo atualizado', 'Alteração salva com sucesso.', 'ok');
   closeEditModal();
 }
@@ -633,31 +734,28 @@ function toggleDone(id) {
   if (!t || !canEditTask(t)) return;
 
   // Se está sendo marcada como concluída E tem recorrência → cria próxima
-  if (!t.done && t.recorrencia && t.recorrencia !== 'none') {
-    const nextDate = calcNextDate(t.date, t.recorrencia);
+  if (!t.done && t.recConfig && t.recConfig.type !== 'none') {
+    const nextDate = calcNextDate(t.date, t.recConfig);
     if (nextDate) {
-      // Cria a nova task recorrente (reseta done, tratativa, histórico de notif)
       const novaTask = {
         ...t,
-        id:         undefined, // será gerado pelo Firebase
         date:       nextDate,
-        tratativa:  null,       // limpa tratativa — precisa reagendar
+        tratativa:  null,
         done:       false,
         createdAt:  new Date().toISOString(),
         historico:  [{
           data:          fmtDate(new Date().toISOString()),
           prazoAnterior: t.date,
           prazoNovo:     nextDate,
-          justificativa: 'Recriada automaticamente por recorrência ' + RECORRENCIA_LABEL[t.recorrencia],
+          justificativa: 'Recriada automaticamente — ' + fmtRecorrenciaDetalhe(t),
           por:           currentUser.name
         }]
       };
       delete novaTask.id;
       saveTaskFirebase(novaTask);
 
-      const labelRec = RECORRENCIA_LABEL[t.recorrencia] || t.recorrencia;
       showToast('🔁', 'Recorrência ativada',
-        '"' + t.title + '" reativada para ' + fmtDate(nextDate) + ' (' + labelRec + ')', 'ok');
+        '"' + t.title + '" reativada para ' + fmtDate(nextDate), 'ok');
     }
   }
 
@@ -933,12 +1031,76 @@ function onDropColumn(event, dateStr) {
     return;
   }
 
-  const tratativa = dateStr ? dateStr + 'T12:00' : null;
-  updateTaskFirebase(draggedTaskId, { tratativa });
+  // Backlog — sempre livre
+  if (!dateStr) {
+    updateTaskFirebase(draggedTaskId, { tratativa: null });
+    showToast('📋', 'Tratativa removida', 'Tarefa movida para o Backlog.', 'ok');
+    draggedTaskId = null;
+    return;
+  }
+
+  const tratativa  = dateStr + 'T12:00';
+  const prazoFatal = new Date(t.date);
+  const dropDay    = new Date(dateStr + 'T00:00:00');
+
+  // Tratativa antes ou no mesmo dia do prazo fatal — livre
+  if (dropDay <= prazoFatal) {
+    updateTaskFirebase(draggedTaskId, { tratativa });
+    showToast('📋', 'Tratativa atualizada',
+      'Agendada para ' + fmtDateShort(tratativa) + '.', 'ok');
+    draggedTaskId = null;
+    return;
+  }
+
+  // Tratativa DEPOIS do prazo fatal — exige justificativa
+  pendingDrop = { taskId: draggedTaskId, dateStr };
   draggedTaskId = null;
 
-  const msg = dateStr ? 'Tratativa agendada para ' + fmtDateShort(tratativa) : 'Tarefa movida para Backlog';
-  showToast('📋', 'Tratativa atualizada', msg, 'ok');
+  // Preenche o modal com contexto
+  const modalTitle = document.getElementById('drop-justif-title');
+  const modalInfo  = document.getElementById('drop-justif-info');
+  if (modalTitle) modalTitle.textContent = t.title;
+  if (modalInfo)  modalInfo.textContent  =
+    'Tratativa ' + fmtDateShort(tratativa) + ' está após o prazo fatal (' + fmtDateShort(t.date) + ').';
+
+  const justifEl = document.getElementById('drop-justif-text');
+  if (justifEl) justifEl.value = '';
+
+  document.getElementById('modalDropJustif').style.display = 'flex';
+}
+
+function confirmDropAfterDeadline() {
+  const justif = (document.getElementById('drop-justif-text')?.value || '').trim();
+  if (!justif) {
+    showToast('⚠️', 'Justificativa obrigatória',
+      'Explique o motivo de tratar após o prazo fatal.', 'warn');
+    return;
+  }
+
+  if (!pendingDrop) return;
+  const { taskId, dateStr } = pendingDrop;
+  const tratativa = dateStr + 'T12:00';
+  const t = tasks.find(x => x.id == taskId);
+
+  const historico = [...(t?.historico || []), {
+    data:          fmtDate(new Date().toISOString()),
+    prazoAnterior: t?.date,
+    prazoNovo:     t?.date, // prazo fatal não muda
+    justificativa: '[Tratativa após prazo fatal] ' + justif,
+    por:           currentUser.name
+  }];
+
+  updateTaskFirebase(taskId, { tratativa, historico });
+  showToast('📋', 'Tratativa atualizada',
+    'Agendada para ' + fmtDateShort(tratativa) + ' (após prazo fatal).', 'warn');
+
+  pendingDrop = null;
+  document.getElementById('modalDropJustif').style.display = 'none';
+}
+
+function cancelDropJustif() {
+  pendingDrop = null;
+  document.getElementById('modalDropJustif').style.display = 'none';
 }
 
 // =============================================
@@ -1122,7 +1284,7 @@ function openDetail(id) {
   document.getElementById('detail-status-badge').outerHTML =
     '<span id="detail-status-badge">' + statusBadge(status) +
     (t.visibility === 'private' ? '<span class="badge badge-private">🔒 Privado</span>' : '') +
-    (t.recorrencia && t.recorrencia !== 'none' ? '<span class="badge badge-recorrencia">' + RECORRENCIA_LABEL[t.recorrencia] + '</span>' : '') +
+    (t.recorrencia && t.recorrencia !== 'none' ? '<span class="badge badge-recorrencia">' + fmtRecorrenciaDetalhe(t) + '</span>' : '') +
     '</span>';
 
   document.getElementById('detail-date').textContent      = fmtDate(t.date);
@@ -1133,7 +1295,7 @@ function openDetail(id) {
 
   // Campo recorrência no detalhe
   const detRecEl = document.getElementById('detail-recorrencia');
-  if (detRecEl) detRecEl.textContent = RECORRENCIA_LABEL[t.recorrencia] || 'Sem recorrência';
+  if (detRecEl) detRecEl.textContent = fmtRecorrenciaDetalhe(t);
 
   document.getElementById('detail-cat').textContent  = catLabel;
   document.getElementById('detail-prio').innerHTML   = '<span style="color:' + prioColor + ';font-weight:700">' + prioLabel + '</span>';
