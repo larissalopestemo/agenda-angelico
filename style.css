@@ -966,6 +966,10 @@ select option { background: var(--surface2); }
   background: rgba(100,149,237,0.15);
   color: #7EB8FF;
 }
+.badge-recorrencia {
+  background: rgba(100,200,150,0.15);
+  color: #6ECC96;
+}
 
 /* =============================================
    KANBAN HEADER
