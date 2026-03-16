@@ -1,6 +1,6 @@
 /* =============================================
    ANGÉLICO ADVOGADOS — AGENDA DE PRAZOS
-   app.js — v4.0 (Kanban + Tratativa + Vista Semanal)
+   app.js — v4.1 (Kanban + Tratativa + Recorrência)
    ============================================= */
 
 const FIREBASE_CONFIG = {
@@ -98,6 +98,28 @@ function getUserFullName(email) {
   const u = AUTHORIZED_USERS.find(x => normalizeEmail(x.email) === normalizeEmail(email));
   return u ? u.name : email;
 }
+
+// =============================================
+// RECORRÊNCIA — calcula próximo prazo
+// =============================================
+function calcNextDate(dateStr, recorrencia) {
+  const d = new Date(dateStr);
+  if (!d || isNaN(d)) return null;
+  switch (recorrencia) {
+    case 'daily':   d.setDate(d.getDate() + 1);   break;
+    case 'weekly':  d.setDate(d.getDate() + 7);   break;
+    case 'monthly': d.setMonth(d.getMonth() + 1); break;
+    default: return null;
+  }
+  return d.toISOString().slice(0, 16);
+}
+
+const RECORRENCIA_LABEL = {
+  none:    'Sem recorrência',
+  daily:   '🔁 Diária',
+  weekly:  '🔁 Semanal',
+  monthly: '🔁 Mensal',
+};
 
 // =============================================
 // SEMANA UTILS
@@ -357,19 +379,19 @@ function loadAvatar() {
 function setView(view) {
   currentView = view;
   document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
-  const btn = document.querySelector(`.view-btn[data-view="${view}"]`);
+  const btn = document.querySelector('.view-btn[data-view="' + view + '"]');
   if (btn) btn.classList.add('active');
   const listArea    = document.getElementById('listArea');
   const kanbanArea  = document.getElementById('kanbanArea');
   const listToolbar = document.getElementById('listToolbar');
   if (view === 'list') {
-    listArea.style.display   = 'block';
-    kanbanArea.style.display = 'none';
+    listArea.style.display    = 'block';
+    kanbanArea.style.display  = 'none';
     listToolbar.style.display = 'flex';
     render();
   } else {
-    listArea.style.display   = 'none';
-    kanbanArea.style.display = 'block';
+    listArea.style.display    = 'none';
+    kanbanArea.style.display  = 'block';
     listToolbar.style.display = 'none';
     renderKanban();
   }
@@ -414,7 +436,7 @@ function toggleCustomAlert(sel) {
 function addTask() {
   const title     = document.getElementById('inp-title').value.trim();
   const date      = document.getElementById('inp-date').value;
-  const tratativa = document.getElementById('inp-tratativa').value;
+  const tratativa = document.getElementById('inp-tratativa')?.value || null;
 
   if (!title) { showToast('⚠️', 'Campo obrigatório', 'Informe o título.', 'warn'); return; }
   if (!date)  { showToast('⚠️', 'Campo obrigatório', 'Informe o prazo fatal.', 'warn'); return; }
@@ -425,25 +447,30 @@ function addTask() {
     : [];
   responsaveis = sanitizeResponsaveis(responsaveis, true);
 
-  const emailsRaw = document.getElementById('inp-emails').value;
-  const emails    = emailsRaw.split(',').map(e => e.trim()).filter(Boolean);
-  const privCheck = document.getElementById('inp-privado');
+  const emailsRaw  = document.getElementById('inp-emails').value;
+  const emails     = emailsRaw.split(',').map(e => e.trim()).filter(Boolean);
+  const privCheck  = document.getElementById('inp-privado');
   const visibility = (currentUser.role === 'admin' && privCheck && privCheck.checked) ? 'private' : 'shared';
+
+  // Recorrência
+  const recSelEl   = document.getElementById('inp-recorrencia');
+  const recorrencia = recSelEl ? recSelEl.value : 'none';
 
   const task = {
     title,
-    desc:      document.getElementById('inp-desc').value.trim(),
+    desc:       document.getElementById('inp-desc').value.trim(),
     date,
-    tratativa: tratativa || null,
+    tratativa:  tratativa || null,
+    recorrencia,
     responsaveis,
-    proc:      document.getElementById('inp-proc').value.trim(),
-    cat:       document.getElementById('inp-cat').value,
-    prio:      selectedPrio,
-    alertMin:  (() => {
+    proc:       document.getElementById('inp-proc').value.trim(),
+    cat:        document.getElementById('inp-cat').value,
+    prio:       selectedPrio,
+    alertMin:   (() => {
       const sel = document.getElementById('inp-alert');
       if (sel.value === 'custom') {
         const customDt = document.getElementById('inp-alert-custom').value;
-        const taskDt   = document.getElementById('inp-date').value;
+        const taskDt   = date;
         if (customDt && taskDt) {
           const diff = Math.round((new Date(taskDt) - new Date(customDt)) / 60000);
           return diff > 0 ? diff : 0;
@@ -454,11 +481,11 @@ function addTask() {
     })(),
     emails,
     visibility,
-    ownerEmail: normalizeEmail(currentUser.email),
-    done:       false,
-    createdBy:  currentUser.name,
-    createdAt:  new Date().toISOString(),
-    historico:  []
+    ownerEmail:  normalizeEmail(currentUser.email),
+    done:        false,
+    createdBy:   currentUser.name,
+    createdAt:   new Date().toISOString(),
+    historico:   []
   };
 
   saveTaskFirebase(task);
@@ -470,6 +497,8 @@ function resetForm() {
   ['inp-title','inp-desc','inp-proc','inp-tratativa'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
+  const recSel = document.getElementById('inp-recorrencia');
+  if (recSel) recSel.value = 'none';
   const container = document.getElementById('inp-responsaveis');
   if (container) container.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
   const priv = document.getElementById('inp-privado');
@@ -489,9 +518,14 @@ function openEditModal(id) {
   document.getElementById('edit-id').value        = id;
   document.getElementById('edit-title').value     = t.title;
   document.getElementById('edit-date').value      = t.date;
-  document.getElementById('edit-tratativa').value = t.tratativa || '';
   document.getElementById('edit-desc').value      = t.desc || '';
   document.getElementById('edit-justif').value    = '';
+
+  const editTratEl = document.getElementById('edit-tratativa');
+  if (editTratEl) editTratEl.value = t.tratativa || '';
+
+  const editRecEl = document.getElementById('edit-recorrencia');
+  if (editRecEl) editRecEl.value = t.recorrencia || 'none';
 
   const container = document.getElementById('edit-responsaveis');
   if (container) {
@@ -524,7 +558,6 @@ function saveEdit() {
   const id        = document.getElementById('edit-id').value;
   const title     = document.getElementById('edit-title').value.trim();
   const date      = document.getElementById('edit-date').value;
-  const tratativa = document.getElementById('edit-tratativa').value;
   const desc      = document.getElementById('edit-desc').value.trim();
   const justif    = document.getElementById('edit-justif').value.trim();
 
@@ -547,7 +580,12 @@ function saveEdit() {
     : ((tasks.find(x => x.id == id) || {}).responsaveis || []);
   responsaveis = sanitizeResponsaveis(responsaveis, true);
 
-  updateTaskFirebase(id, { title, date, tratativa: tratativa || null, desc, historico, responsaveis });
+  const editTratEl  = document.getElementById('edit-tratativa');
+  const editRecEl   = document.getElementById('edit-recorrencia');
+  const tratativa   = editTratEl ? (editTratEl.value || null) : t.tratativa;
+  const recorrencia = editRecEl  ? editRecEl.value : (t.recorrencia || 'none');
+
+  updateTaskFirebase(id, { title, date, tratativa, recorrencia, desc, historico, responsaveis });
   showToast('✅', 'Prazo atualizado', 'Alteração salva com sucesso.', 'ok');
   closeEditModal();
 }
@@ -593,6 +631,37 @@ function saveTransfer() {
 function toggleDone(id) {
   const t = tasks.find(x => x.id == id);
   if (!t || !canEditTask(t)) return;
+
+  // Se está sendo marcada como concluída E tem recorrência → cria próxima
+  if (!t.done && t.recorrencia && t.recorrencia !== 'none') {
+    const nextDate = calcNextDate(t.date, t.recorrencia);
+    if (nextDate) {
+      // Cria a nova task recorrente (reseta done, tratativa, histórico de notif)
+      const novaTask = {
+        ...t,
+        id:         undefined, // será gerado pelo Firebase
+        date:       nextDate,
+        tratativa:  null,       // limpa tratativa — precisa reagendar
+        done:       false,
+        createdAt:  new Date().toISOString(),
+        historico:  [{
+          data:          fmtDate(new Date().toISOString()),
+          prazoAnterior: t.date,
+          prazoNovo:     nextDate,
+          justificativa: 'Recriada automaticamente por recorrência ' + RECORRENCIA_LABEL[t.recorrencia],
+          por:           currentUser.name
+        }]
+      };
+      delete novaTask.id;
+      saveTaskFirebase(novaTask);
+
+      const labelRec = RECORRENCIA_LABEL[t.recorrencia] || t.recorrencia;
+      showToast('🔁', 'Recorrência ativada',
+        '"' + t.title + '" reativada para ' + fmtDate(nextDate) + ' (' + labelRec + ')', 'ok');
+    }
+  }
+
+  // Marca a task atual como concluída (ou reabre)
   updateTaskFirebase(id, { done: !t.done });
 }
 
@@ -685,6 +754,8 @@ function renderCard(t) {
     ? '<span class="badge badge-hist" title="' + t.historico.length + ' alteração(ões)">↺ ' + t.historico.length + '</span>' : '';
   const tratBadge = t.tratativa
     ? '<span class="badge badge-tratativa">📋 ' + fmtDateShort(t.tratativa) + '</span>' : '';
+  const recBadge  = t.recorrencia && t.recorrencia !== 'none'
+    ? '<span class="badge badge-recorrencia" title="' + RECORRENCIA_LABEL[t.recorrencia] + '">' + RECORRENCIA_LABEL[t.recorrencia] + '</span>' : '';
 
   return '<div class="task-card prio-' + t.prio + (status === 'overdue' ? ' overdue' : '') + (t.done ? ' done' : '') + '" onclick="openDetail(\'' + t.id + '\')">' +
     '<div class="task-info">' +
@@ -692,7 +763,7 @@ function renderCard(t) {
         '<span class="task-title">' + esc(t.title) + '</span>' +
         statusBadge(status) +
         (t.visibility === 'private' ? '<span class="badge badge-private">🔒 Privado</span>' : '') +
-        histBadge + tratBadge +
+        histBadge + tratBadge + recBadge +
       '</div>' +
       (t.desc ? '<div class="task-desc">' + esc(t.desc) + '</div>' : '') +
       '<div class="task-meta">' +
@@ -720,7 +791,6 @@ function renderKanban() {
   const area = document.getElementById('kanbanArea');
   if (!area || !currentUser) return;
 
-  // Lê textos configuráveis do HTML
   const cfg = document.getElementById('kanban-config');
   const KT = {
     backlogTitle : cfg ? cfg.dataset.backlogTitle  : '📥 Backlog',
@@ -797,7 +867,7 @@ function renderKanban() {
       '</div></div>';
   });
 
-  html += '</div>'; // fecha kanban-board
+  html += '</div>';
   area.innerHTML = html;
 }
 
@@ -813,6 +883,8 @@ function renderKanbanCard(t, now) {
   else if (daysLeft <= 1) dlClass = 'kcard-deadline-soon';
   else if (daysLeft <= 3) dlClass = 'kcard-deadline-warn';
 
+  const recIcon = t.recorrencia && t.recorrencia !== 'none' ? ' 🔁' : '';
+
   return '<div class="kanban-card kprio-' + t.prio + (isOverdue ? ' kcard-overdue' : '') + '" ' +
     'draggable="true" ' +
     'ondragstart="onDragStart(event,\'' + t.id + '\')" ' +
@@ -820,7 +892,7 @@ function renderKanbanCard(t, now) {
     'onclick="openDetail(\'' + t.id + '\')">' +
     '<div class="kcard-prio-bar" style="background:' + prioColor + '"></div>' +
     '<div class="kcard-body">' +
-      '<div class="kcard-title">' + esc(t.title) + '</div>' +
+      '<div class="kcard-title">' + esc(t.title) + recIcon + '</div>' +
       (t.proc ? '<div class="kcard-proc">📎 ' + esc(t.proc) + '</div>' : '') +
       '<div class="kcard-footer">' +
         '<span class="kcard-deadline ' + dlClass + '">⚠️ ' + fmtDateShort(t.date) + '</span>' +
@@ -1048,12 +1120,21 @@ function openDetail(id) {
 
   document.getElementById('detail-title').textContent = t.title;
   document.getElementById('detail-status-badge').outerHTML =
-    '<span id="detail-status-badge">' + statusBadge(status) + (t.visibility === 'private' ? '<span class="badge badge-private">🔒 Privado</span>' : '') + '</span>';
+    '<span id="detail-status-badge">' + statusBadge(status) +
+    (t.visibility === 'private' ? '<span class="badge badge-private">🔒 Privado</span>' : '') +
+    (t.recorrencia && t.recorrencia !== 'none' ? '<span class="badge badge-recorrencia">' + RECORRENCIA_LABEL[t.recorrencia] + '</span>' : '') +
+    '</span>';
+
   document.getElementById('detail-date').textContent      = fmtDate(t.date);
   document.getElementById('detail-tratativa').textContent = t.tratativa ? fmtDate(t.tratativa) : '—';
 
   const tlColor = status === 'overdue' ? 'var(--danger)' : status === 'today' ? 'var(--warn)' : 'var(--ok)';
   document.getElementById('detail-timeleft').innerHTML = tl ? '<span style="color:' + tlColor + '">' + tl + '</span>' : '—';
+
+  // Campo recorrência no detalhe
+  const detRecEl = document.getElementById('detail-recorrencia');
+  if (detRecEl) detRecEl.textContent = RECORRENCIA_LABEL[t.recorrencia] || 'Sem recorrência';
+
   document.getElementById('detail-cat').textContent  = catLabel;
   document.getElementById('detail-prio').innerHTML   = '<span style="color:' + prioColor + ';font-weight:700">' + prioLabel + '</span>';
   document.getElementById('detail-proc').textContent = t.proc || '—';
