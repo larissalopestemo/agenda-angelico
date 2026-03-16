@@ -225,6 +225,16 @@
             <input type="datetime-local" id="inp-alert-custom" placeholder="Data e hora do lembrete">
           </div>
         </div>
+         <div class="field">
+          <label>🔁 Recorrência</label>
+          <select id="inp-recorrencia">
+            <option value="none">Sem recorrência</option>
+            <option value="daily">Diária</option>
+            <option value="weekly">Semanal</option>
+            <option value="monthly">Mensal</option>
+          </select>
+          <span class="field-hint">Ao concluir, uma nova tarefa é criada automaticamente com o próximo prazo</span>
+        </div>
         <div class="field span-2">
           <label>Notificar e-mails (separados por vírgula)</label>
           <input type="text" id="inp-emails" placeholder="email1@anlema.com.br, email2@anlema.com.br">
@@ -266,6 +276,15 @@
         <div class="field">
           <label>📋 Data de Tratativa</label>
           <input type="datetime-local" id="edit-tratativa">
+        </div>
+        <div class="field">
+          <label>🔁 Recorrência</label>
+          <select id="edit-recorrencia">
+            <option value="none">Sem recorrência</option>
+            <option value="daily">Diária</option>
+            <option value="weekly">Semanal</option>
+            <option value="monthly">Mensal</option>
+          </select>
         </div>
         <div class="field span-2">
           <label>Descrição</label>
@@ -345,6 +364,10 @@
         <div class="detail-item">
           <div class="detail-lbl">Prioridade</div>
           <div class="detail-val" id="detail-prio"></div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-lbl">🔁 Recorrência</div>
+          <div class="detail-val" id="detail-recorrencia">—</div>
         </div>
         <div class="detail-item span-2">
           <div class="detail-lbl">Assunto / Referência</div>
