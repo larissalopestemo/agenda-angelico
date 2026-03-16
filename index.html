@@ -405,5 +405,38 @@
 <div id="toastContainer" class="toast-container"></div>
 
 <script src="app.js"></script>
+  <div class="modal-overlay" id="modalDropJustif" style="display:none" onclick="if(event.target===this)cancelDropJustif()">
+  <div class="modal-box modal-sm">
+    <div class="modal-header">
+      <h3>⚠️ Tratativa após prazo fatal</h3>
+      <button class="modal-close" onclick="cancelDropJustif()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="
+        background: rgba(224,82,82,0.08);
+        border: 1px solid rgba(224,82,82,0.25);
+        border-radius: 8px;
+        padding: 12px 14px;
+        margin-bottom: 16px;
+        font-size: 0.78rem;
+        line-height: 1.5;
+      ">
+        <div style="font-weight:700; color:var(--danger); margin-bottom:4px" id="drop-justif-title"></div>
+        <div style="color:var(--muted)" id="drop-justif-info"></div>
+      </div>
+      <div class="field">
+        <label>Justificativa *</label>
+        <textarea id="drop-justif-text"
+          placeholder="Ex: Cliente solicitou prorrogação informal, aguardando confirmação por escrito..."
+          style="min-height: 90px"></textarea>
+        <span class="field-hint">Essa justificativa será registrada no histórico da tarefa.</span>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-ghost" onclick="cancelDropJustif()">Cancelar</button>
+      <button class="btn-primary" onclick="confirmDropAfterDeadline()">Confirmar</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
