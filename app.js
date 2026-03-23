@@ -313,14 +313,25 @@ function listenTasks() {
 
 function listenCronograma() {
   if (!db) { loadLocalCronograma(); return; }
+
+  db.ref('socialCronograma').off('value');
   db.ref('socialCronograma').on('value', snapshot => {
     cronogramaItems = [];
     snapshot.forEach(child => {
       const val = child.val() || {};
-      cronogramaItems.push({ id: child.key, ...val, responsavel: normalizeEmail(val.responsavel) });
+      cronogramaItems.push(normalizeCronogramaItem({
+        id: child.key,
+        ...val
+      }));
     });
-    cronogramaItems.sort((a, b) => new Date(a.data) - new Date(b.data));
+
+    cronogramaItems.sort((a, b) => new Date(a.data + 'T00:00:00') - new Date(b.data + 'T00:00:00'));
+    localStorage.setItem('angelico-cronograma', JSON.stringify(cronogramaItems));
+
     if (currentView === 'cronograma') renderCronograma();
+  }, err => {
+    console.warn('Erro ao ouvir cronograma no Firebase:', err);
+    loadLocalCronograma();
   });
 }
 
@@ -341,21 +352,60 @@ function deleteTaskFirebase(id) {
   db.ref('tasks/' + id).remove();
 }
 
-function saveCronogramaFirebase(item) {
-  if (!db) { saveLocalCronograma(item); return; }
-  const ref = db.ref('socialCronograma').push();
-  item.id   = ref.key;
-  ref.set(item);
+async function saveCronogramaFirebase(item) {
+  const normalized = normalizeCronogramaItem(item);
+
+  if (!db) {
+    return saveLocalCronograma(normalized);
+  }
+
+  const ref = normalized.id
+    ? db.ref('socialCronograma/' + normalized.id)
+    : db.ref('socialCronograma').push();
+
+  normalized.id = normalized.id || ref.key;
+
+  saveLocalCronograma(normalized);
+
+  try {
+    await ref.set(normalized);
+    return normalized;
+  } catch (e) {
+    console.warn('Erro ao salvar cronograma no Firebase:', e);
+    throw e;
+  }
 }
 
-function updateCronogramaFirebase(id, data) {
-  if (!db) { updateLocalCronograma(id, data); return; }
-  db.ref('socialCronograma/' + id).update(data);
+async function updateCronogramaFirebase(id, data) {
+  const current = cronogramaItems.find(x => x.id == id);
+  const merged  = normalizeCronogramaItem({ ...(current || {}), ...data, id });
+
+  if (!db) {
+    updateLocalCronograma(id, merged);
+    return;
+  }
+
+  updateLocalCronograma(id, merged);
+
+  try {
+    await db.ref('socialCronograma/' + id).update(merged);
+  } catch (e) {
+    console.warn('Erro ao atualizar cronograma no Firebase:', e);
+    throw e;
+  }
 }
 
-function deleteCronogramaFirebase(id) {
-  if (!db) { deleteLocalCronograma(id); return; }
-  db.ref('socialCronograma/' + id).remove();
+async function deleteCronogramaFirebase(id) {
+  deleteLocalCronograma(id);
+
+  if (!db) return;
+
+  try {
+    await db.ref('socialCronograma/' + id).remove();
+  } catch (e) {
+    console.warn('Erro ao excluir cronograma no Firebase:', e);
+    throw e;
+  }
 }
 
 // =============================================
@@ -385,21 +435,40 @@ function deleteLocalTask(id) {
 }
 
 function loadLocalCronograma() {
-  cronogramaItems = JSON.parse(localStorage.getItem('angelico-cronograma') || '[]').map(item => ({
-    ...item, responsavel: normalizeEmail(item.responsavel)
-  }));
+  cronogramaItems = JSON.parse(localStorage.getItem('angelico-cronograma') || '[]')
+    .map(item => normalizeCronogramaItem(item))
+    .filter(Boolean);
+
+  cronogramaItems.sort((a, b) => new Date(a.data + 'T00:00:00') - new Date(b.data + 'T00:00:00'));
+
   if (currentView === 'cronograma') renderCronograma();
 }
 function saveLocalCronograma(item) {
-  item.id = Date.now().toString(); cronogramaItems.unshift(item);
+  const normalized = normalizeCronogramaItem(item);
+
+  if (!normalized.id) normalized.id = Date.now().toString();
+
+  const idx = cronogramaItems.findIndex(x => x.id == normalized.id);
+  if (idx >= 0) cronogramaItems[idx] = normalized;
+  else cronogramaItems.unshift(normalized);
+
+  cronogramaItems.sort((a, b) => new Date(a.data + 'T00:00:00') - new Date(b.data + 'T00:00:00'));
   localStorage.setItem('angelico-cronograma', JSON.stringify(cronogramaItems));
+
   if (currentView === 'cronograma') renderCronograma();
+  return normalized;
 }
 function updateLocalCronograma(id, data) {
-  const item = cronogramaItems.find(x => x.id == id);
-  if (item) Object.assign(item, data);
-  localStorage.setItem('angelico-cronograma', JSON.stringify(cronogramaItems));
-  if (currentView === 'cronograma') renderCronograma();
+  const idx = cronogramaItems.findIndex(x => x.id == id);
+  if (idx >= 0) {
+    cronogramaItems[idx] = normalizeCronogramaItem({
+      ...cronogramaItems[idx],
+      ...data
+    });
+    cronogramaItems.sort((a, b) => new Date(a.data + 'T00:00:00') - new Date(b.data + 'T00:00:00'));
+    localStorage.setItem('angelico-cronograma', JSON.stringify(cronogramaItems));
+    if (currentView === 'cronograma') renderCronograma();
+  }
 }
 function deleteLocalCronograma(id) {
   cronogramaItems = cronogramaItems.filter(x => x.id != id);
@@ -1162,6 +1231,22 @@ function saveNotified() {
 }
 
 // =============================================
+// HELPERS DO CRONOGRAMA
+// =============================================
+function normalizeCronogramaDate(dateStr) {
+  return String(dateStr || '').slice(0, 10);
+}
+
+function normalizeCronogramaItem(item) {
+  if (!item) return item;
+  return {
+    ...item,
+    data: normalizeCronogramaDate(item.data),
+    responsavel: normalizeEmail(item.responsavel || '')
+  };
+}
+
+// =============================================
 // CRONOGRAMA — STATUS
 // =============================================
 const CRON_STATUS_LABEL = {
@@ -1194,10 +1279,10 @@ function getCronogramaMonth(offset) {
   const last  = new Date(base.getFullYear(), base.getMonth() + (offset || 0) + 1, 0);
 
   const start = new Date(first);
-  start.setDate(first.getDate() - first.getDay()); // começa no domingo
+  start.setDate(first.getDate() - first.getDay());
 
   const end = new Date(last);
-  end.setDate(last.getDate() + (6 - last.getDay())); // termina no sábado
+  end.setDate(last.getDate() + (6 - last.getDay()));
 
   const days   = [];
   const cursor = new Date(start);
@@ -1222,7 +1307,9 @@ function renderCronograma() {
   const { first, days } = getCronogramaMonth(cronogramaMonthOffset);
   const today           = new Date();
   const monthLabel      = fmtMonthYear(first);
-  const visible         = Array.isArray(cronogramaItems) ? cronogramaItems : [];
+  const visible         = Array.isArray(cronogramaItems)
+    ? cronogramaItems.map(normalizeCronogramaItem).filter(Boolean)
+    : [];
 
   let html = `
     <div class="cronograma-header">
@@ -1243,13 +1330,12 @@ function renderCronograma() {
     const inMonth = day.getMonth() === first.getMonth();
     const isToday = isSameDay(day, today);
 
-    // Chave de data no formato YYYY-MM-DD (mesmo formato gravado)
     const yyyy    = day.getFullYear();
     const mm      = String(day.getMonth() + 1).padStart(2, '0');
     const dd      = String(day.getDate()).padStart(2, '0');
     const dateKey = `${yyyy}-${mm}-${dd}`;
 
-    const dayItems = visible.filter(item => item && item.data === dateKey);
+    const dayItems = visible.filter(item => normalizeCronogramaDate(item.data) === dateKey);
 
     html += `<div class="cronograma-day ${inMonth ? '' : 'cronograma-day-out'} ${isToday ? 'cronograma-day-today' : ''}">
       <div class="cronograma-day-head">
@@ -1311,33 +1397,39 @@ function closeCronogramaModal() {
   if (modal) modal.style.display = 'none';
 }
 
-function saveCronogramaItem() {
+async function saveCronogramaItem() {
   if (!canAccessCronograma()) return;
 
-  const titulo      = (document.getElementById('cron-titulo')?.value      || '').trim();
-  const data        = (document.getElementById('cron-data')?.value        || '').trim();
+  const titulo      = (document.getElementById('cron-titulo')?.value || '').trim();
+  const data        = normalizeCronogramaDate(document.getElementById('cron-data')?.value || '');
   const responsavel = normalizeEmail(document.getElementById('cron-responsavel')?.value || '');
-  const canal       = (document.getElementById('cron-canal')?.value       || '').trim();
-  const tipo        = (document.getElementById('cron-tipo')?.value        || '').trim();
-  const obs         = (document.getElementById('cron-obs')?.value         || '').trim();
+  const canal       = (document.getElementById('cron-canal')?.value || '').trim();
+  const tipo        = (document.getElementById('cron-tipo')?.value || '').trim();
+  const obs         = (document.getElementById('cron-obs')?.value || '').trim();
 
   if (!titulo)      { showToast('⚠️', 'Campo obrigatório', 'Informe o título.', 'warn');      return; }
   if (!data)        { showToast('⚠️', 'Campo obrigatório', 'Informe a data.', 'warn');         return; }
   if (!responsavel) { showToast('⚠️', 'Campo obrigatório', 'Informe o responsável.', 'warn'); return; }
 
-  const item = {
-    titulo, data, responsavel,
-    canal:     canal     || 'Instagram',
-    tipo:      tipo      || 'Feed',
+  const item = normalizeCronogramaItem({
+    titulo,
+    data,
+    responsavel,
+    canal:     canal || 'Instagram',
+    tipo:      tipo || 'Feed',
     status:    'pendente',
     obs,
     criadoPor: currentUser?.name || 'Sistema',
     criadoEm:  new Date().toISOString()
-  };
+  });
 
-  saveCronogramaFirebase(item);
-  closeCronogramaModal();
-  showToast('✅', 'Publicação criada', '"' + titulo + '" adicionada ao cronograma.', 'ok');
+  try {
+    await saveCronogramaFirebase(item);
+    closeCronogramaModal();
+    showToast('✅', 'Publicação criada', '"' + titulo + '" adicionada ao cronograma.', 'ok');
+  } catch (e) {
+    showToast('⚠️', 'Erro ao sincronizar', 'A publicação apareceu localmente, mas falhou no Firebase.', 'warn');
+  }
 }
 
 // =============================================
@@ -1357,7 +1449,6 @@ function openCronogramaDetail(id) {
   setTxt('cron-detail-criado',  (item.criadoPor || '—') + (item.criadoEm ? ' — ' + fmtDate(item.criadoEm) : ''));
   setTxt('cron-detail-obs',     item.obs || 'Sem observações.');
 
-  // Data formatada por extenso
   const dataEl = document.getElementById('cron-detail-data');
   if (dataEl) {
     dataEl.textContent = item.data
@@ -1365,47 +1456,50 @@ function openCronogramaDetail(id) {
       : '—';
   }
 
-  // Badge de status
   const statusEl = document.getElementById('cron-detail-status');
   if (statusEl) {
     statusEl.textContent = CRON_STATUS_LABEL[item.status] || item.status;
     statusEl.style.color = CRON_STATUS_COLOR[item.status]  || 'var(--muted)';
   }
 
-  // Barra colorida no topo
   const bar = document.getElementById('cron-detail-bar');
   if (bar) bar.style.background = CRON_STATUS_COLOR[item.status] || 'var(--accent)';
 
-  // Botão "Marcar como publicado"
   const btnPublicar = document.getElementById('cron-detail-btn-publicar');
   if (btnPublicar) {
     if (item.status === 'publicado') {
       btnPublicar.style.display = 'none';
     } else {
       btnPublicar.style.display = 'inline-flex';
-      btnPublicar.onclick = () => {
-        updateCronogramaFirebase(id, { status: 'publicado' });
-        closeCronogramaDetail();
-        showToast('✅', 'Publicado!', '"' + item.titulo + '" marcada como publicada.', 'ok');
+      btnPublicar.onclick = async () => {
+        try {
+          await updateCronogramaFirebase(id, { status: 'publicado' });
+          closeCronogramaDetail();
+          showToast('✅', 'Publicado!', '"' + item.titulo + '" marcada como publicada.', 'ok');
+        } catch (e) {
+          showToast('⚠️', 'Erro', 'Não foi possível atualizar o status.', 'warn');
+        }
       };
     }
   }
 
-  // Botão "Alterar status"
   const btnStatus = document.getElementById('cron-detail-btn-status');
   if (btnStatus) btnStatus.onclick = () => openCronogramaStatusModal(id);
 
-  // Botão "Excluir"
   const btnDel = document.getElementById('cron-detail-btn-del');
   if (btnDel) {
     const podeExcluir = currentUser.role === 'admin' ||
       normalizeEmail(item.responsavel) === normalizeEmail(currentUser.email);
     btnDel.style.display = podeExcluir ? 'inline-flex' : 'none';
-    btnDel.onclick = () => {
+    btnDel.onclick = async () => {
       if (!confirm('Excluir esta publicação do cronograma?')) return;
-      deleteCronogramaFirebase(id);
-      closeCronogramaDetail();
-      showToast('🗑', 'Excluída', '"' + item.titulo + '" removida.', 'warn');
+      try {
+        await deleteCronogramaFirebase(id);
+        closeCronogramaDetail();
+        showToast('🗑', 'Excluída', '"' + item.titulo + '" removida.', 'warn');
+      } catch (e) {
+        showToast('⚠️', 'Erro', 'Não foi possível excluir a publicação.', 'warn');
+      }
     };
   }
 
@@ -1439,16 +1533,20 @@ function closeCronogramaStatusModal() {
   if (modal) modal.style.display = 'none';
 }
 
-function saveCronogramaStatus() {
+async function saveCronogramaStatus() {
   const modal  = document.getElementById('modalCronogramaStatus');
   const id     = modal?.dataset.activeId;
   const selEl  = document.getElementById('cron-status-select');
   const status = selEl?.value;
   if (!id || !status) return;
 
-  updateCronogramaFirebase(id, { status });
-  closeCronogramaStatusModal();
-  showToast('✅', 'Status atualizado', CRON_STATUS_LABEL[status] || status, 'ok');
+  try {
+    await updateCronogramaFirebase(id, { status });
+    closeCronogramaStatusModal();
+    showToast('✅', 'Status atualizado', CRON_STATUS_LABEL[status] || status, 'ok');
+  } catch (e) {
+    showToast('⚠️', 'Erro', 'Não foi possível atualizar o status.', 'warn');
+  }
 }
 
 // =============================================
