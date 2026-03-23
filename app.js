@@ -755,7 +755,7 @@ function toggleDone(id) {
         recConfig:   t.recConfig,
         alertMin:    t.alertMin,
         date:        nextDate,   // <-- novo prazo fatal calculado
-        tratativa:   null,       // <-- sem tratativa (volta ao backlog)
+        tratativa:   nextDate,       // <-- sem tratativa (volta ao backlog)
         done:        false,
         createdBy:   t.createdBy,
         createdAt:   new Date().toISOString(),
