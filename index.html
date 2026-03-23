@@ -59,6 +59,7 @@
       <div class="view-switcher">
         <button class="view-btn active" data-view="list" onclick="setView('list')">☰ Lista</button>
         <button class="view-btn" data-view="kanban" onclick="setView('kanban')">⊞ Kanban</button>
+        <button class="view-btn" id="cronogramaViewBtn" data-view="cronograma" onclick="setView('cronograma')" style="display:none">Cronograma</button>
       </div>
       <div class="stats-grid">
         <div class="stat-box ok">
@@ -113,9 +114,13 @@
           </select>
         </div>
       </div>
-
+<div class="toolbar" id="cronogramaToolbar" style="display:none">
+  <h2 class="toolbar-title">Cronograma de Publicações</h2>
+  <button class="btn-primary" onclick="openCronogramaModal()">+ Nova Publicação</button>
+</div>
       <div id="listArea"><div id="taskList" class="task-list"></div></div>
       <div id="kanbanArea" style="display:none"></div>
+      <div id="cronogramaArea" style="display:none"></div>
 
       <template id="kanban-config"
         data-backlog-title="📥 Sem data de tratativa"
@@ -468,6 +473,162 @@
       </div>
     </div>
     <div class="modal-footer" id="detail-actions"></div>
+  </div>
+</div>
+
+<!-- =================== MODAL NOVA PUBLICAÇÃO =================== -->
+<div class="modal-overlay" id="modalCronograma" style="display:none" onclick="if(event.target===this)closeCronogramaModal()">
+  <div class="modal-box modal-sm">
+    <div class="modal-header">
+      <h3>Nova Publicação</h3>
+      <button class="modal-close" onclick="closeCronogramaModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="field span-2">
+          <label>Título *</label>
+          <input type="text" id="cron-titulo" placeholder="Ex: Post sobre oposição do INPI">
+        </div>
+
+        <div class="field">
+          <label>Data *</label>
+          <input type="date" id="cron-data">
+        </div>
+
+        <div class="field">
+          <label>Responsável *</label>
+          <select id="cron-responsavel">
+            <option value="paralegal@anlema.com.br">Larissa Lopes</option>
+            <option value="beatriz.amaro@anlema.com.br">Beatriz Amaro</option>
+            <option value="andrea@anlema.com.br">Andrea Angélico</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Canal</label>
+          <select id="cron-canal">
+            <option value="Instagram">Instagram</option>
+            <option value="LinkedIn">LinkedIn</option>
+            <option value="Facebook">Facebook</option>
+            <option value="Site">Site</option>
+            <option value="Outro">Outro</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Tipo</label>
+          <select id="cron-tipo">
+            <option value="Feed">Feed</option>
+            <option value="Story">Story</option>
+            <option value="Carrossel">Carrossel</option>
+            <option value="Reels">Reels</option>
+            <option value="Artigo">Artigo</option>
+            <option value="Outro">Outro</option>
+          </select>
+        </div>
+
+        <div class="field span-2">
+          <label>Observações</label>
+          <textarea id="cron-obs" placeholder="Ex: falta legenda / aguarda aprovação / briefing pronto"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-ghost" onclick="closeCronogramaModal()">Cancelar</button>
+      <button class="btn-primary" onclick="saveCronogramaItem()">Salvar Publicação</button>
+    </div>
+  </div>
+</div>
+
+<!-- =================== POPUP DETALHE CRONOGRAMA =================== -->
+
+<div class="modal-overlay" id="cronogramaDetailOverlay" style="display:none" onclick="if(event.target===this)closeCronogramaDetail()">
+  <div class="modal-box" style="max-width:520px">
+
+    <!-- Barra colorida de status no topo -->
+    <div id="cron-detail-bar" class="cron-detail-bar"></div>
+
+    <div class="modal-header">
+      <div class="detail-title-wrap">
+        <span id="cron-detail-status" class="cron-detail-status-badge"></span>
+        <h3 id="cron-detail-titulo"></h3>
+      </div>
+      <button class="modal-close" onclick="closeCronogramaDetail()">✕</button>
+    </div>
+
+    <div class="modal-body">
+      <div class="cron-detail-grid">
+        <div class="detail-item">
+          <div class="detail-lbl">📅 Data</div>
+          <div class="detail-val" id="cron-detail-data"></div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-lbl">👤 Responsável</div>
+          <div class="detail-val" id="cron-detail-resp"></div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-lbl">Canal</div>
+          <div class="detail-val" id="cron-detail-canal"></div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-lbl">Tipo</div>
+          <div class="detail-val" id="cron-detail-tipo"></div>
+        </div>
+        <div class="detail-item span-2">
+          <div class="detail-lbl">Criado por</div>
+          <div class="detail-val" id="cron-detail-criado"></div>
+        </div>
+      </div>
+
+      <div style="margin-top:4px">
+        <div class="detail-section-title">Observações</div>
+        <div class="cron-obs-box" id="cron-detail-obs"></div>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <!-- Excluir (só para quem pode) -->
+      <button id="cron-detail-btn-del" class="btn-detail-action btn-detail-danger" style="display:none;align-items:center;gap:6px">
+        ✕ Excluir
+      </button>
+      <!-- Alterar status -->
+      <button id="cron-detail-btn-status" class="btn-detail-action btn-detail-secondary" style="display:inline-flex;align-items:center;gap:6px">
+        ⊞ Alterar status
+      </button>
+      <!-- Marcar como publicado -->
+      <button id="cron-detail-btn-publicar" class="btn-detail-action" style="display:inline-flex;align-items:center;gap:6px">
+        ✅ Marcar publicado
+      </button>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- =================== MODAL ALTERAR STATUS CRONOGRAMA =================== -->
+
+<div class="modal-overlay" id="modalCronogramaStatus" style="display:none" onclick="if(event.target===this)closeCronogramaStatusModal()">
+  <div class="modal-box modal-sm">
+    <div class="modal-header">
+      <h3>Alterar status da publicação</h3>
+      <button class="modal-close" onclick="closeCronogramaStatusModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>Novo status</label>
+        <select id="cron-status-select">
+          <option value="pendente">🕐 Pendente</option>
+          <option value="producao">🛠 Em produção</option>
+          <option value="aprovacao">👁 Aguardando aprovação</option>
+          <option value="publicado">✅ Publicado</option>
+          <option value="cancelado">✕ Cancelado</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-ghost" onclick="closeCronogramaStatusModal()">Cancelar</button>
+      <button class="btn-primary" onclick="saveCronogramaStatus()">Salvar</button>
+    </div>
   </div>
 </div>
 

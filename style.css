@@ -1274,3 +1274,233 @@ select option { background: var(--surface2); }
     min-height: 120px;
   }
 }
+
+/* =============================================
+   ADICIONAR AO FINAL DO style.css EXISTENTE
+   Cronograma de Publicações — v4.3
+   ============================================= */
+
+/* =============================================
+   CRONOGRAMA — HEADER
+   ============================================= */
+.cronograma-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.cronograma-title-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+}
+
+.cronograma-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.cronograma-subtitle {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+/* =============================================
+   CRONOGRAMA — GRID
+   ============================================= */
+.cronograma-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+}
+
+.cronograma-weekdays {
+  margin-bottom: 6px;
+}
+
+.cronograma-weekdays div {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: center;
+  padding: 4px 0;
+}
+
+/* =============================================
+   CRONOGRAMA — DIA
+   ============================================= */
+.cronograma-day {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  min-height: 120px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 0.15s;
+}
+
+.cronograma-day-out {
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+.cronograma-day-today {
+  border-color: rgba(200,169,81,0.45);
+  background: rgba(200,169,81,0.05);
+}
+
+.cronograma-day-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.cronograma-day-count {
+  background: var(--surface2);
+  color: var(--accent);
+  border: 1px solid rgba(200,169,81,0.2);
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-size: 0.56rem;
+  font-weight: 700;
+}
+
+.cronograma-day-body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+/* =============================================
+   CRONOGRAMA — ITEM (card dentro do dia)
+   ============================================= */
+.cronograma-item {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  animation: slideIn 0.2s ease;
+}
+
+.cronograma-item:hover {
+  border-color: var(--border2);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+}
+
+/* Publicado — mais apagado */
+.cronograma-item.cron-publicado {
+  opacity: 0.55;
+}
+.cronograma-item.cron-publicado .cronograma-item-title {
+  text-decoration: line-through;
+}
+
+.cronograma-item-title {
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.35;
+  margin-bottom: 3px;
+}
+
+.cronograma-item-meta {
+  font-size: 0.56rem;
+  color: var(--muted);
+  line-height: 1.3;
+}
+
+/* =============================================
+   CRONOGRAMA — POPUP DETALHE
+   ============================================= */
+.cron-detail-bar {
+  height: 4px;
+  width: 100%;
+  border-radius: 16px 16px 0 0;
+  flex-shrink: 0;
+}
+
+.cron-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.cron-detail-grid .span-2 {
+  grid-column: 1 / -1;
+}
+
+.cron-detail-status-badge {
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.cron-obs-box {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  min-height: 48px;
+}
+
+/* =============================================
+   CRONOGRAMA — MODAL STATUS
+   ============================================= */
+.cron-status-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+/* =============================================
+   CRONOGRAMA — RESPONSIVE
+   ============================================= */
+@media (max-width: 1200px) {
+  .cronograma-grid {
+    grid-template-columns: repeat(7, 1fr);
+    gap: 5px;
+  }
+  .cronograma-day {
+    min-height: 90px;
+    padding: 6px;
+  }
+}
+
+@media (max-width: 900px) {
+  .cronograma-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .cronograma-weekdays {
+    display: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .cronograma-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
