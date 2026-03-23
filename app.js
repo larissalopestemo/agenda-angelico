@@ -328,7 +328,8 @@ function listenTasks() {
 
 function listenCronograma() {
   if (!db) {
-    loadLocalCronograma();
+    cronogramaItems = [];
+    if (currentView === 'cronograma') renderCronograma();
     return;
   }
 
@@ -344,12 +345,12 @@ function listenCronograma() {
     });
 
     cronogramaItems.sort((a, b) => new Date(a.data + 'T00:00:00') - new Date(b.data + 'T00:00:00'));
-    localStorage.setItem('angelico-cronograma', JSON.stringify(cronogramaItems));
 
     if (currentView === 'cronograma') renderCronograma();
   }, err => {
     console.warn('Erro ao ouvir cronograma no Firebase:', err);
-    loadLocalCronograma();
+    cronogramaItems = [];
+    if (currentView === 'cronograma') renderCronograma();
   });
 }
 
@@ -371,67 +372,31 @@ function deleteTaskFirebase(id) {
 }
 
 async function saveCronogramaFirebase(item) {
+  if (!db) throw new Error('Firebase indisponível');
+
   const normalized = normalizeCronogramaItem(item);
-  const localSaved = saveLocalCronograma(normalized);
+  const ref = db.ref('socialCronograma').push();
+  normalized.id = ref.key;
 
-  if (!db) {
-    return { ok: true, synced: false, item: localSaved };
-  }
-
-  try {
-    const finalItem = { ...localSaved };
-
-    if (!finalItem.id || /^\d+$/.test(String(finalItem.id))) {
-      const oldId = finalItem.id;
-      const ref = db.ref('socialCronograma').push();
-      finalItem.id = ref.key;
-
-      updateLocalCronograma(oldId, { id: finalItem.id });
-      await ref.set(finalItem);
-    } else {
-      await db.ref('socialCronograma/' + finalItem.id).set(finalItem);
-    }
-
-    return { ok: true, synced: true, item: finalItem };
-  } catch (e) {
-    console.warn('Erro ao salvar cronograma no Firebase:', e);
-    return { ok: true, synced: false, item: localSaved, error: e };
-  }
+  await ref.set(normalized);
+  return normalized;
 }
 
 async function updateCronogramaFirebase(id, data) {
+  if (!db) throw new Error('Firebase indisponível');
+
   const current = cronogramaItems.find(x => x.id == id);
   const merged  = normalizeCronogramaItem({ ...(current || {}), ...data, id });
 
-  updateLocalCronograma(id, merged);
-
-  if (!db) {
-    return { ok: true, synced: false, item: merged };
-  }
-
-  try {
-    await db.ref('socialCronograma/' + id).update(merged);
-    return { ok: true, synced: true, item: merged };
-  } catch (e) {
-    console.warn('Erro ao atualizar cronograma no Firebase:', e);
-    return { ok: true, synced: false, item: merged, error: e };
-  }
+  await db.ref('socialCronograma/' + id).update(merged);
+  return merged;
 }
 
 async function deleteCronogramaFirebase(id) {
-  deleteLocalCronograma(id);
+  if (!db) throw new Error('Firebase indisponível');
 
-  if (!db) {
-    return { ok: true, synced: false };
-  }
-
-  try {
-    await db.ref('socialCronograma/' + id).remove();
-    return { ok: true, synced: true };
-  } catch (e) {
-    console.warn('Erro ao excluir cronograma no Firebase:', e);
-    return { ok: true, synced: false, error: e };
-  }
+  await db.ref('socialCronograma/' + id).remove();
+  return true;
 }
 
 // =============================================
@@ -460,45 +425,14 @@ function deleteLocalTask(id) {
   localStorage.setItem('angelico-tasks', JSON.stringify(tasks)); renderCurrentView();
 }
 
+// cronograma sem fallback local
 function loadLocalCronograma() {
-  cronogramaItems = JSON.parse(localStorage.getItem('angelico-cronograma') || '[]')
-    .map(item => normalizeCronogramaItem(item))
-    .filter(Boolean);
-
-  cronogramaItems.sort((a, b) => new Date(a.data + 'T00:00:00') - new Date(b.data + 'T00:00:00'));
+  cronogramaItems = [];
   if (currentView === 'cronograma') renderCronograma();
 }
-function saveLocalCronograma(item) {
-  const normalized = normalizeCronogramaItem(item);
-
-  if (!normalized.id) normalized.id = Date.now().toString();
-
-  const idx = cronogramaItems.findIndex(x => x.id == normalized.id);
-  if (idx >= 0) cronogramaItems[idx] = normalized;
-  else cronogramaItems.unshift(normalized);
-
-  cronogramaItems.sort((a, b) => new Date(a.data + 'T00:00:00') - new Date(b.data + 'T00:00:00'));
-  localStorage.setItem('angelico-cronograma', JSON.stringify(cronogramaItems));
-  if (currentView === 'cronograma') renderCronograma();
-  return normalized;
-}
-function updateLocalCronograma(id, data) {
-  const idx = cronogramaItems.findIndex(x => x.id == id);
-  if (idx >= 0) {
-    cronogramaItems[idx] = normalizeCronogramaItem({
-      ...cronogramaItems[idx],
-      ...data
-    });
-    cronogramaItems.sort((a, b) => new Date(a.data + 'T00:00:00') - new Date(b.data + 'T00:00:00'));
-    localStorage.setItem('angelico-cronograma', JSON.stringify(cronogramaItems));
-    if (currentView === 'cronograma') renderCronograma();
-  }
-}
-function deleteLocalCronograma(id) {
-  cronogramaItems = cronogramaItems.filter(x => x.id != id);
-  localStorage.setItem('angelico-cronograma', JSON.stringify(cronogramaItems));
-  if (currentView === 'cronograma') renderCronograma();
-}
+function saveLocalCronograma() {}
+function updateLocalCronograma() {}
+function deleteLocalCronograma() {}
 
 // =============================================
 // LOGIN / LOGOUT
@@ -1431,13 +1365,13 @@ async function saveCronogramaItem() {
     criadoEm:  new Date().toISOString()
   });
 
-  const result = await saveCronogramaFirebase(item);
-  closeCronogramaModal();
-
-  if (result.synced) {
+  try {
+    await saveCronogramaFirebase(item);
+    closeCronogramaModal();
     showToast('✅', 'Publicação criada', '"' + titulo + '" adicionada ao cronograma.', 'ok');
-  } else {
-    showToast('⚠️', 'Salva localmente', '"' + titulo + '" foi salva localmente. A sincronização com Firebase falhou.', 'warn');
+  } catch (e) {
+    console.error(e);
+    showToast('⚠️', 'Erro ao salvar', 'Não foi possível salvar a publicação no Firebase.', 'warn');
   }
 }
 
@@ -1481,13 +1415,13 @@ function openCronogramaDetail(id) {
     } else {
       btnPublicar.style.display = 'inline-flex';
       btnPublicar.onclick = async () => {
-        const result = await updateCronogramaFirebase(id, { status: 'publicado' });
-        closeCronogramaDetail();
-
-        if (result.synced) {
+        try {
+          await updateCronogramaFirebase(id, { status: 'publicado' });
+          closeCronogramaDetail();
           showToast('✅', 'Publicado!', '"' + item.titulo + '" marcada como publicada.', 'ok');
-        } else {
-          showToast('⚠️', 'Atualizado localmente', 'A publicação foi marcada localmente, mas a sincronização com Firebase falhou.', 'warn');
+        } catch (e) {
+          console.error(e);
+          showToast('⚠️', 'Erro', 'Não foi possível atualizar o status no Firebase.', 'warn');
         }
       };
     }
@@ -1503,14 +1437,13 @@ function openCronogramaDetail(id) {
     btnDel.style.display = podeExcluir ? 'inline-flex' : 'none';
     btnDel.onclick = async () => {
       if (!confirm('Excluir esta publicação do cronograma?')) return;
-
-      const result = await deleteCronogramaFirebase(id);
-      closeCronogramaDetail();
-
-      if (result.synced) {
+      try {
+        await deleteCronogramaFirebase(id);
+        closeCronogramaDetail();
         showToast('🗑', 'Excluída', '"' + item.titulo + '" removida.', 'warn');
-      } else {
-        showToast('⚠️', 'Excluída localmente', 'A publicação foi removida localmente, mas a sincronização com Firebase falhou.', 'warn');
+      } catch (e) {
+        console.error(e);
+        showToast('⚠️', 'Erro', 'Não foi possível excluir a publicação do Firebase.', 'warn');
       }
     };
   }
@@ -1552,13 +1485,13 @@ async function saveCronogramaStatus() {
   const status = selEl?.value;
   if (!id || !status) return;
 
-  const result = await updateCronogramaFirebase(id, { status });
-  closeCronogramaStatusModal();
-
-  if (result.synced) {
+  try {
+    await updateCronogramaFirebase(id, { status });
+    closeCronogramaStatusModal();
     showToast('✅', 'Status atualizado', CRON_STATUS_LABEL[status] || status, 'ok');
-  } else {
-    showToast('⚠️', 'Atualizado localmente', 'O status foi atualizado localmente, mas a sincronização com Firebase falhou.', 'warn');
+  } catch (e) {
+    console.error(e);
+    showToast('⚠️', 'Erro', 'Não foi possível atualizar o status no Firebase.', 'warn');
   }
 }
 
