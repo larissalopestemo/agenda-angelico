@@ -299,8 +299,13 @@ function initFirebase() {
 
 function connectFirebase() {
   try {
-    firebase.initializeApp(FIREBASE_CONFIG);
-    db = firebase.database();
+    // Se o app já foi inicializado (ex: reload na mesma sessão), reutiliza
+    const existingApp = firebase.apps && firebase.apps.length > 0
+      ? firebase.apps[0]
+      : firebase.initializeApp(FIREBASE_CONFIG);
+    db = existingApp.database
+      ? existingApp.database()
+      : firebase.database();
     if (currentUser) {
       listenTasks();
       listenCronograma();
@@ -308,7 +313,6 @@ function connectFirebase() {
     }
   } catch (e) {
     console.warn('Firebase erro:', e);
-    // SEM fallback local — sem Firebase nada funciona
     showToast('⚠️', 'Sem conexão', 'Não foi possível conectar ao Firebase. Verifique sua internet.', 'danger');
   }
 }
