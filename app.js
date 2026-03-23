@@ -1,6 +1,6 @@
 /* =============================================
    ANGÉLICO ADVOGADOS — AGENDA DE PRAZOS
-   app.js — v4.3 (cronograma fix completo)
+   app.js — v4.4 (corrigido)
    ============================================= */
 
 const FIREBASE_CONFIG = {
@@ -34,6 +34,7 @@ const CRONOGRAMA_USERS = [
   'paralegal@anlema.com.br',
   'beatriz.amaro@anlema.com.br'
 ];
+
 let db                    = null;
 let tasks                 = [];
 let cronogramaItems       = [];
@@ -116,7 +117,7 @@ function normalizeCronogramaItem(item) {
   if (!item) return item;
   return {
     ...item,
-    data: normalizeCronogramaDate(item.data),
+    data:        normalizeCronogramaDate(item.data),
     responsavel: normalizeEmail(item.responsavel || '')
   };
 }
@@ -300,16 +301,20 @@ function connectFirebase() {
   try {
     firebase.initializeApp(FIREBASE_CONFIG);
     db = firebase.database();
-    if (currentUser) { listenTasks(); listenCronograma(); loadAvatar(); }
+    if (currentUser) {
+      listenTasks();
+      listenCronograma();
+      loadAvatar();
+    }
   } catch (e) {
     console.warn('Firebase erro:', e);
-    loadLocalTasks();
-    loadLocalCronograma();
+    // SEM fallback local — sem Firebase nada funciona
+    showToast('⚠️', 'Sem conexão', 'Não foi possível conectar ao Firebase. Verifique sua internet.', 'danger');
   }
 }
 
 function listenTasks() {
-  if (!db) { loadLocalTasks(); return; }
+  if (!db) return;
   db.ref('tasks').on('value', snapshot => {
     tasks = [];
     snapshot.forEach(child => {
@@ -327,112 +332,64 @@ function listenTasks() {
 }
 
 function listenCronograma() {
-  if (!db) {
-    cronogramaItems = [];
-    if (currentView === 'cronograma') renderCronograma();
-    return;
-  }
+  if (!db) return;
 
+  // Remove listener anterior se existir, depois registra novo
   db.ref('socialCronograma').off('value');
   db.ref('socialCronograma').on('value', snapshot => {
     cronogramaItems = [];
     snapshot.forEach(child => {
       const val = child.val() || {};
-      cronogramaItems.push(normalizeCronogramaItem({
-        id: child.key,
-        ...val
-      }));
+      cronogramaItems.push(normalizeCronogramaItem({ id: child.key, ...val }));
     });
-
     cronogramaItems.sort((a, b) => new Date(a.data + 'T00:00:00') - new Date(b.data + 'T00:00:00'));
-
     if (currentView === 'cronograma') renderCronograma();
   }, err => {
-    console.warn('Erro ao ouvir cronograma no Firebase:', err);
+    console.warn('Erro ao ouvir cronograma:', err);
     cronogramaItems = [];
     if (currentView === 'cronograma') renderCronograma();
   });
 }
 
 function saveTaskFirebase(task) {
-  if (!db) { saveLocalTask(task); return; }
+  if (!db) { showToast('⚠️', 'Sem conexão', 'Firebase indisponível.', 'danger'); return; }
   const ref = db.ref('tasks').push();
   task.id   = ref.key;
   ref.set(task);
 }
 
 function updateTaskFirebase(id, data) {
-  if (!db) { updateLocalTask(id, data); return; }
+  if (!db) { showToast('⚠️', 'Sem conexão', 'Firebase indisponível.', 'danger'); return; }
   db.ref('tasks/' + id).update(data);
 }
 
 function deleteTaskFirebase(id) {
-  if (!db) { deleteLocalTask(id); return; }
+  if (!db) { showToast('⚠️', 'Sem conexão', 'Firebase indisponível.', 'danger'); return; }
   db.ref('tasks/' + id).remove();
 }
 
 async function saveCronogramaFirebase(item) {
   if (!db) throw new Error('Firebase indisponível');
-
-  const normalized = normalizeCronogramaItem(item);
   const ref = db.ref('socialCronograma').push();
-  normalized.id = ref.key;
-
-  await ref.set(normalized);
-  return normalized;
+  item.id   = ref.key;
+  await ref.set(item);
+  return item;
 }
 
 async function updateCronogramaFirebase(id, data) {
   if (!db) throw new Error('Firebase indisponível');
-
-  const current = cronogramaItems.find(x => x.id == id);
-  const merged  = normalizeCronogramaItem({ ...(current || {}), ...data, id });
-
-  await db.ref('socialCronograma/' + id).update(merged);
-  return merged;
+  await db.ref('socialCronograma/' + id).update(data);
+  // Atualiza array local imediatamente (o listener também vai atualizar, mas garante UI rápida)
+  const idx = cronogramaItems.findIndex(x => x.id == id);
+  if (idx >= 0) cronogramaItems[idx] = normalizeCronogramaItem({ ...cronogramaItems[idx], ...data, id });
+  return cronogramaItems[idx];
 }
 
 async function deleteCronogramaFirebase(id) {
   if (!db) throw new Error('Firebase indisponível');
-
   await db.ref('socialCronograma/' + id).remove();
   return true;
 }
-
-// =============================================
-// FALLBACK LOCAL
-// =============================================
-function loadLocalTasks() {
-  tasks = JSON.parse(localStorage.getItem('angelico-tasks') || '[]').map(t => ({
-    ...t,
-    ownerEmail:   normalizeEmail(t.ownerEmail),
-    responsaveis: Array.isArray(t.responsaveis) ? t.responsaveis.map(normalizeEmail) : []
-  }));
-  notifiedKeys = new Set(JSON.parse(localStorage.getItem('angelico-notified') || '[]'));
-  renderCurrentView(); checkAlerts();
-}
-function saveLocalTask(task) {
-  task.id = Date.now().toString(); tasks.unshift(task);
-  localStorage.setItem('angelico-tasks', JSON.stringify(tasks)); renderCurrentView();
-}
-function updateLocalTask(id, data) {
-  const t = tasks.find(x => x.id == id);
-  if (t) Object.assign(t, data);
-  localStorage.setItem('angelico-tasks', JSON.stringify(tasks)); renderCurrentView();
-}
-function deleteLocalTask(id) {
-  tasks = tasks.filter(x => x.id != id);
-  localStorage.setItem('angelico-tasks', JSON.stringify(tasks)); renderCurrentView();
-}
-
-// cronograma sem fallback local
-function loadLocalCronograma() {
-  cronogramaItems = [];
-  if (currentView === 'cronograma') renderCronograma();
-}
-function saveLocalCronograma() {}
-function updateLocalCronograma() {}
-function deleteLocalCronograma() {}
 
 // =============================================
 // LOGIN / LOGOUT
@@ -443,12 +400,20 @@ function login() {
   const user     = AUTHORIZED_USERS.find(u => normalizeEmail(u.email) === email);
   if (!user)                      { showLoginError('E-mail não autorizado.'); return; }
   if (user.password !== password) { showLoginError('Senha incorreta.');       return; }
+
   currentUser = { name: user.name, email: normalizeEmail(user.email), role: user.role };
   sessionStorage.setItem('angelico-user', JSON.stringify(currentUser));
   document.getElementById('login-error').style.display = 'none';
+
   showApp();
   populateTeamSelect('inp-responsaveis');
-  if (db) { listenTasks(); listenCronograma(); } else { loadLocalTasks(); loadLocalCronograma(); }
+
+  if (db) {
+    listenTasks();
+    listenCronograma();
+  } else {
+    showToast('⚠️', 'Sem conexão', 'Aguardando Firebase...', 'warn');
+  }
 }
 
 function showLoginError(msg) {
@@ -457,7 +422,17 @@ function showLoginError(msg) {
 }
 
 function logout() {
-  currentUser = null;
+  // Remove listeners do Firebase antes de sair
+  if (db) {
+    db.ref('tasks').off('value');
+    db.ref('socialCronograma').off('value');
+  }
+  currentUser       = null;
+  tasks             = [];
+  cronogramaItems   = [];
+  currentView       = 'list';
+  kanbanWeekOffset  = 0;
+
   sessionStorage.removeItem('angelico-user');
   document.getElementById('screenLogin').style.display = 'flex';
   document.getElementById('screenApp').style.display   = 'none';
@@ -521,7 +496,6 @@ function handleAvatarUpload(input) {
   reader.onload = e => {
     const data = e.target.result;
     if (db) db.ref('avatars/' + currentUser.email.replace(/[.#$\[\]]/g, '_')).set(data);
-    else localStorage.setItem('avatar-' + currentUser.email, data);
     const avatarEl = document.getElementById('sidebar-avatar');
     if (avatarEl) avatarEl.src = data;
   };
@@ -529,17 +503,12 @@ function handleAvatarUpload(input) {
 }
 
 function loadAvatar() {
-  if (!currentUser) return;
+  if (!currentUser || !db) return;
   const avatarEl = document.getElementById('sidebar-avatar');
   if (!avatarEl) return;
-  if (db) {
-    db.ref('avatars/' + currentUser.email.replace(/[.#$\[\]]/g, '_')).once('value', snap => {
-      if (snap.val()) avatarEl.src = snap.val();
-    });
-  } else {
-    const saved = localStorage.getItem('avatar-' + currentUser.email);
-    if (saved) avatarEl.src = saved;
-  }
+  db.ref('avatars/' + currentUser.email.replace(/[.#$\[\]]/g, '_')).once('value', snap => {
+    if (snap.val()) avatarEl.src = snap.val();
+  });
 }
 
 // =============================================
@@ -553,11 +522,11 @@ function setView(view) {
   const btn = document.querySelector('.view-btn[data-view="' + view + '"]');
   if (btn) btn.classList.add('active');
 
-  const listArea       = document.getElementById('listArea');
-  const kanbanArea     = document.getElementById('kanbanArea');
-  const cronArea       = document.getElementById('cronogramaArea');
-  const listToolbar    = document.getElementById('listToolbar');
-  const cronToolbar    = document.getElementById('cronogramaToolbar');
+  const listArea    = document.getElementById('listArea');
+  const kanbanArea  = document.getElementById('kanbanArea');
+  const cronArea    = document.getElementById('cronogramaArea');
+  const listToolbar = document.getElementById('listToolbar');
+  const cronToolbar = document.getElementById('cronogramaToolbar');
 
   if (listArea)    listArea.style.display    = 'none';
   if (kanbanArea)  kanbanArea.style.display  = 'none';
@@ -619,9 +588,10 @@ function toggleCustomAlert(sel) {
 function addTask() {
   const title     = document.getElementById('inp-title').value.trim();
   const date      = document.getElementById('inp-date').value;
-  const tratativa = document.getElementById('inp-tratativa')?.value || null;
+  const tratEl    = document.getElementById('inp-tratativa');
+  const tratativa = tratEl ? (tratEl.value || null) : null;
 
-  if (!title) { showToast('⚠️', 'Campo obrigatório', 'Informe o título.', 'warn');      return; }
+  if (!title) { showToast('⚠️', 'Campo obrigatório', 'Informe o título.', 'warn');       return; }
   if (!date)  { showToast('⚠️', 'Campo obrigatório', 'Informe o prazo fatal.', 'warn'); return; }
 
   const container = document.getElementById('inp-responsaveis');
@@ -695,13 +665,16 @@ function resetForm() {
 function openEditModal(id) {
   const t = tasks.find(x => x.id == id);
   if (!t || !canEditTask(t)) return;
+
   document.getElementById('edit-id').value     = id;
   document.getElementById('edit-title').value  = t.title;
   document.getElementById('edit-date').value   = t.date;
   document.getElementById('edit-desc').value   = t.desc || '';
   document.getElementById('edit-justif').value = '';
+
   const editTratEl = document.getElementById('edit-tratativa');
   if (editTratEl) editTratEl.value = t.tratativa || '';
+
   writeRecConfig('edit', t.recConfig || { type: t.recorrencia || 'none' });
 
   const container = document.getElementById('edit-responsaveis');
@@ -709,7 +682,9 @@ function openEditModal(id) {
     const lista = getAssignableUsers();
     container.innerHTML = lista.map(u => `
       <label class="team-checkbox">
-        <input type="checkbox" value="${normalizeEmail(u.email)}" ${Array.isArray(t.responsaveis) && t.responsaveis.includes(normalizeEmail(u.email)) ? 'checked' : ''}>
+        <input type="checkbox" value="${normalizeEmail(u.email)}" ${
+          Array.isArray(t.responsaveis) && t.responsaveis.includes(normalizeEmail(u.email)) ? 'checked' : ''
+        }>
         <span class="team-check-name">${u.name}</span>
       </label>
     `).join('');
@@ -725,6 +700,7 @@ function openEditModal(id) {
   } else {
     hist.innerHTML = '<p style="color:var(--muted);font-size:0.72rem;padding:8px 0">Nenhuma alteração anterior.</p>';
   }
+
   document.getElementById('modalEditTask').style.display = 'flex';
 }
 
@@ -739,14 +715,17 @@ function saveEdit() {
   const desc   = document.getElementById('edit-desc').value.trim();
   const justif = document.getElementById('edit-justif').value.trim();
 
-  if (!title)  { showToast('⚠️', 'Obrigatório', 'Informe o título.', 'warn');                              return; }
-  if (!date)   { showToast('⚠️', 'Obrigatório', 'Informe o prazo.', 'warn');                               return; }
+  if (!title)  { showToast('⚠️', 'Obrigatório', 'Informe o título.', 'warn');                             return; }
+  if (!date)   { showToast('⚠️', 'Obrigatório', 'Informe o prazo.', 'warn');                              return; }
   if (!justif) { showToast('⚠️', 'Justificativa obrigatória', 'Explique o motivo da alteração.', 'warn'); return; }
 
   const t         = tasks.find(x => x.id == id);
   const historico = [...(t.historico || []), {
-    data: fmtDate(new Date().toISOString()), prazoAnterior: t.date,
-    prazoNovo: date, justificativa: justif, por: currentUser.name
+    data:          fmtDate(new Date().toISOString()),
+    prazoAnterior: t.date,
+    prazoNovo:     date,
+    justificativa: justif,
+    por:           currentUser.name
   }];
 
   const editContainer = document.getElementById('edit-responsaveis');
@@ -756,7 +735,7 @@ function saveEdit() {
   responsaveis = sanitizeResponsaveis(responsaveis, true);
 
   const editTratEl = document.getElementById('edit-tratativa');
-  const tratativa  = editTratEl ? (editTratEl.value || null) : t.tratativa;
+  const tratativa  = editTratEl ? (editTratEl.value || null) : (t.tratativa || null);
   const recConfig  = readRecConfig('edit');
 
   updateTaskFirebase(id, { title, date, tratativa, recorrencia: recConfig.type, recConfig, desc, historico, responsaveis });
@@ -800,7 +779,7 @@ function saveTransfer() {
 }
 
 // =============================================
-// AÇÕES NOS CARDS (tarefas)
+// AÇÕES NOS CARDS
 // =============================================
 function toggleDone(id) {
   const t = tasks.find(x => x.id == id);
@@ -810,15 +789,29 @@ function toggleDone(id) {
     const nextDate = calcNextDate(t.recConfig);
     if (nextDate) {
       const novaTask = {
-        title: t.title, desc: t.desc, proc: t.proc, cat: t.cat, prio: t.prio,
-        emails: t.emails, visibility: t.visibility, ownerEmail: t.ownerEmail,
-        responsaveis: t.responsaveis, recorrencia: t.recorrencia, recConfig: t.recConfig,
-        alertMin: t.alertMin, date: nextDate, tratativa: null, done: false,
-        createdBy: t.createdBy, createdAt: new Date().toISOString(),
-        historico: [{
-          data: fmtDate(new Date().toISOString()), prazoAnterior: t.date, prazoNovo: nextDate,
+        title:        t.title,
+        desc:         t.desc,
+        proc:         t.proc,
+        cat:          t.cat,
+        prio:         t.prio,
+        emails:       t.emails,
+        visibility:   t.visibility,
+        ownerEmail:   t.ownerEmail,
+        responsaveis: t.responsaveis,
+        recorrencia:  t.recorrencia,
+        recConfig:    t.recConfig,
+        alertMin:     t.alertMin,
+        date:         nextDate,
+        tratativa:    null,
+        done:         false,
+        createdBy:    t.createdBy,
+        createdAt:    new Date().toISOString(),
+        historico:    [{
+          data:          fmtDate(new Date().toISOString()),
+          prazoAnterior: t.date,
+          prazoNovo:     nextDate,
           justificativa: 'Recriada automaticamente — ' + fmtRecorrenciaDetalhe(t),
-          por: currentUser.name
+          por:           currentUser.name
         }]
       };
       saveTaskFirebase(novaTask);
@@ -839,7 +832,7 @@ function deleteTask(id) {
 }
 
 // =============================================
-// FILTROS (LISTA)
+// FILTROS
 // =============================================
 function setFilter(btn) {
   document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
@@ -916,9 +909,12 @@ function renderCard(t) {
   const tratBadge = t.tratativa
     ? '<span class="badge badge-tratativa">📋 ' + fmtDateShort(t.tratativa) + '</span>' : '';
   const recBadge  = t.recorrencia && t.recorrencia !== 'none'
-    ? '<span class="badge badge-recorrencia" title="' + RECORRENCIA_LABEL[t.recorrencia] + '">' + RECORRENCIA_LABEL[t.recorrencia] + '</span>' : '';
+    ? '<span class="badge badge-recorrencia" title="' + (RECORRENCIA_LABEL[t.recorrencia] || '') + '">' + (RECORRENCIA_LABEL[t.recorrencia] || '') + '</span>' : '';
 
-  return '<div class="task-card prio-' + t.prio + (status === 'overdue' ? ' overdue' : '') + (t.done ? ' done' : '') + '" onclick="openDetail(\'' + t.id + '\')">' +
+  return '<div class="task-card prio-' + t.prio +
+    (status === 'overdue' ? ' overdue' : '') +
+    (t.done ? ' done' : '') +
+    '" onclick="openDetail(\'' + t.id + '\')">' +
     '<div class="task-info">' +
       '<div class="task-header">' +
         '<span class="task-title">' + esc(t.title) + '</span>' +
@@ -957,7 +953,7 @@ function renderKanban() {
   const cfg = document.getElementById('kanban-config');
   const KT  = {
     backlogTitle: cfg ? cfg.dataset.backlogTitle : '📥 Backlog',
-    backlogEmpty: cfg ? cfg.dataset.backlogEmpty : 'Sem tarefas pendentes',
+    backlogEmpty: cfg ? cfg.dataset.backlogEmpty : 'Sem data de tratativa definida',
     colEmpty:     cfg ? cfg.dataset.colEmpty     : 'Arraste aqui',
     weekCurrent:  cfg ? cfg.dataset.weekCurrent  : 'Semana atual',
     dayNames:     cfg ? [0,1,2,3,4].map(i => cfg.dataset['day'+i]) : ['Segunda','Terça','Quarta','Quinta','Sexta'],
@@ -987,6 +983,7 @@ function renderKanban() {
     '<button class="kanban-nav-btn" onclick="kanbanWeek(1)">›</button>' +
   '</div><div class="kanban-board">';
 
+  // Coluna backlog
   html += '<div class="kanban-col kanban-backlog" ' +
     'ondragover="event.preventDefault();this.classList.add(\'drag-over\')" ' +
     'ondragleave="this.classList.remove(\'drag-over\')" ' +
@@ -998,6 +995,7 @@ function renderKanban() {
       (backlogTasks.length === 0 ? '<div class="kanban-empty">' + KT.backlogEmpty + '</div>' : '') +
     '</div></div>';
 
+  // Colunas dos dias
   days.forEach((d, i) => {
     const isToday      = isSameDay(d, now);
     const isPast       = d < startOfDay(now) && !isToday;
@@ -1101,7 +1099,8 @@ function onDropColumn(event, dateStr) {
     draggedTaskId = null; return;
   }
 
-  pendingDrop   = { taskId: draggedTaskId, dateStr };
+  // Drop após prazo fatal — pede justificativa
+  pendingDrop = { taskId: draggedTaskId, dateStr };
   draggedTaskId = null;
 
   const modalTitle = document.getElementById('drop-justif-title');
@@ -1123,8 +1122,11 @@ function confirmDropAfterDeadline() {
   const tratativa = dateStr + 'T12:00';
   const t         = tasks.find(x => x.id == taskId);
   const historico = [...(t?.historico || []), {
-    data: fmtDate(new Date().toISOString()), prazoAnterior: t?.date, prazoNovo: t?.date,
-    justificativa: '[Tratativa após prazo fatal] ' + justif, por: currentUser.name
+    data:          fmtDate(new Date().toISOString()),
+    prazoAnterior: t?.date,
+    prazoNovo:     t?.date,
+    justificativa: '[Tratativa após prazo fatal] ' + justif,
+    por:           currentUser.name
   }];
 
   updateTaskFirebase(taskId, { tratativa, historico });
@@ -1249,7 +1251,9 @@ function renderCronograma() {
   const { first, days } = getCronogramaMonth(cronogramaMonthOffset);
   const today           = new Date();
   const monthLabel      = fmtMonthYear(first);
-  const visible         = Array.isArray(cronogramaItems)
+
+  // Garante que os itens estão normalizados antes de renderizar
+  const visible = Array.isArray(cronogramaItems)
     ? cronogramaItems.map(normalizeCronogramaItem).filter(Boolean)
     : [];
 
@@ -1286,7 +1290,7 @@ function renderCronograma() {
       </div>
       <div class="cronograma-day-body">
         ${dayItems.map(item => {
-          const sc = CRON_STATUS_COLOR[item.status] || 'var(--accent)';
+          const sc  = CRON_STATUS_COLOR[item.status] || 'var(--accent)';
           const isOk = item.status === 'publicado';
           return `<div class="cronograma-item${isOk ? ' cron-publicado' : ''}"
             style="border-left-color:${sc}"
@@ -1343,27 +1347,30 @@ async function saveCronogramaItem() {
   if (!canAccessCronograma()) return;
 
   const titulo      = (document.getElementById('cron-titulo')?.value || '').trim();
-  const data        = normalizeCronogramaDate(document.getElementById('cron-data')?.value || '');
+  const dataRaw     = (document.getElementById('cron-data')?.value || '').trim();
   const responsavel = normalizeEmail(document.getElementById('cron-responsavel')?.value || '');
   const canal       = (document.getElementById('cron-canal')?.value || '').trim();
   const tipo        = (document.getElementById('cron-tipo')?.value || '').trim();
   const obs         = (document.getElementById('cron-obs')?.value || '').trim();
 
-  if (!titulo)      { showToast('⚠️', 'Campo obrigatório', 'Informe o título.', 'warn'); return; }
-  if (!data)        { showToast('⚠️', 'Campo obrigatório', 'Informe a data.', 'warn'); return; }
+  if (!titulo)      { showToast('⚠️', 'Campo obrigatório', 'Informe o título.', 'warn');       return; }
+  if (!dataRaw)     { showToast('⚠️', 'Campo obrigatório', 'Informe a data.', 'warn');         return; }
   if (!responsavel) { showToast('⚠️', 'Campo obrigatório', 'Informe o responsável.', 'warn'); return; }
 
-  const item = normalizeCronogramaItem({
+  // Guarda sempre no formato YYYY-MM-DD
+  const data = normalizeCronogramaDate(dataRaw);
+
+  const item = {
     titulo,
     data,
     responsavel,
     canal:     canal || 'Instagram',
-    tipo:      tipo || 'Feed',
+    tipo:      tipo  || 'Feed',
     status:    'pendente',
     obs,
     criadoPor: currentUser?.name || 'Sistema',
     criadoEm:  new Date().toISOString()
-  });
+  };
 
   try {
     await saveCronogramaFirebase(item);
@@ -1371,7 +1378,7 @@ async function saveCronogramaItem() {
     showToast('✅', 'Publicação criada', '"' + titulo + '" adicionada ao cronograma.', 'ok');
   } catch (e) {
     console.error(e);
-    showToast('⚠️', 'Erro ao salvar', 'Não foi possível salvar a publicação no Firebase.', 'warn');
+    showToast('⚠️', 'Erro ao salvar', 'Não foi possível salvar no Firebase.', 'warn');
   }
 }
 
@@ -1421,7 +1428,7 @@ function openCronogramaDetail(id) {
           showToast('✅', 'Publicado!', '"' + item.titulo + '" marcada como publicada.', 'ok');
         } catch (e) {
           console.error(e);
-          showToast('⚠️', 'Erro', 'Não foi possível atualizar o status no Firebase.', 'warn');
+          showToast('⚠️', 'Erro', 'Não foi possível atualizar o status.', 'warn');
         }
       };
     }
@@ -1443,7 +1450,7 @@ function openCronogramaDetail(id) {
         showToast('🗑', 'Excluída', '"' + item.titulo + '" removida.', 'warn');
       } catch (e) {
         console.error(e);
-        showToast('⚠️', 'Erro', 'Não foi possível excluir a publicação do Firebase.', 'warn');
+        showToast('⚠️', 'Erro', 'Não foi possível excluir.', 'warn');
       }
     };
   }
@@ -1491,7 +1498,7 @@ async function saveCronogramaStatus() {
     showToast('✅', 'Status atualizado', CRON_STATUS_LABEL[status] || status, 'ok');
   } catch (e) {
     console.error(e);
-    showToast('⚠️', 'Erro', 'Não foi possível atualizar o status no Firebase.', 'warn');
+    showToast('⚠️', 'Erro', 'Não foi possível atualizar o status.', 'warn');
   }
 }
 
@@ -1514,9 +1521,11 @@ async function sendEmailAlert(task, timeMsg) {
   for (const email of task.emails) {
     try {
       await emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateId, {
-        to_email: email, to_name: getUserFullName(email),
+        to_email:  email,
+        to_name:   getUserFullName(email),
         subject:   '⏰ Prazo se aproximando: ' + task.title,
-        task_name: task.title, task_date: fmtDate(task.date),
+        task_name: task.title,
+        task_date: fmtDate(task.date),
         task_proc: task.proc || '—',
         task_resp: Array.isArray(task.responsaveis) ? task.responsaveis.map(getUserFullName).join(', ') : '—',
         time_msg:  timeMsg,
@@ -1532,9 +1541,11 @@ async function sendEmailOverdue(task) {
   for (const email of task.emails) {
     try {
       await emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateId, {
-        to_email: email, to_name: getUserFullName(email),
+        to_email:  email,
+        to_name:   getUserFullName(email),
         subject:   '🚨 PRAZO VENCIDO: ' + task.title,
-        task_name: task.title, task_date: fmtDate(task.date),
+        task_name: task.title,
+        task_date: fmtDate(task.date),
         task_proc: task.proc || '—',
         task_resp: Array.isArray(task.responsaveis) ? task.responsaveis.map(getUserFullName).join(', ') : '—',
         time_msg:  'PRAZO VENCIDO',
@@ -1550,17 +1561,19 @@ async function sendEmailOverdue(task) {
 function getStatus(task) {
   if (task.done) return 'done';
   const diff = new Date(task.date) - new Date();
-  if (diff < 0)          return 'overdue';
-  if (diff < 86400000)   return 'today';
-  if (diff < 259200000)  return 'soon';
+  if (diff < 0)         return 'overdue';
+  if (diff < 86400000)  return 'today';
+  if (diff < 259200000) return 'soon';
   return 'ok';
 }
 
 function statusBadge(status) {
   const map = {
-    overdue:['badge-overdue','⚑ Atrasado'], today:['badge-today','◉ Hoje'],
-    soon:   ['badge-soon','◎ Em breve'],    ok:   ['badge-ok','○ No prazo'],
-    done:   ['badge-done','✓ Concluído']
+    overdue: ['badge-overdue','⚑ Atrasado'],
+    today:   ['badge-today','◉ Hoje'],
+    soon:    ['badge-soon','◎ Em breve'],
+    ok:      ['badge-ok','○ No prazo'],
+    done:    ['badge-done','✓ Concluído']
   };
   const [cls, lbl] = map[status];
   return '<span class="badge ' + cls + '">' + lbl + '</span>';
@@ -1609,7 +1622,7 @@ function initClock() {
 }
 
 // =============================================
-// POPUP DETALHE TAREFA (prazos)
+// POPUP DETALHE TAREFA
 // =============================================
 function openDetail(id) {
   const t = tasks.find(x => x.id == id);
@@ -1622,7 +1635,9 @@ function openDetail(id) {
   const catLabel  = { email:'E-mail','prazo-marca':'Prazo Marcas',reuniao:'Reunião',outro:'Outro' }[t.cat] || t.cat;
   const prioLabel = { low:'Baixa', medium:'Média', high:'Alta' }[t.prio] || t.prio;
   const prioColor = { low:'var(--ok)', medium:'var(--warn)', high:'var(--danger)' }[t.prio];
-  const respNames = Array.isArray(t.responsaveis) ? t.responsaveis.map(e => getUserFullName(e)).join(', ') : (t.responsaveis || '—');
+  const respNames = Array.isArray(t.responsaveis)
+    ? t.responsaveis.map(e => getUserFullName(e)).join(', ')
+    : (t.responsaveis || '—');
 
   document.getElementById('detail-title').textContent = t.title;
   document.getElementById('detail-status-badge').outerHTML =
@@ -1631,11 +1646,14 @@ function openDetail(id) {
     (t.recorrencia && t.recorrencia !== 'none' ? '<span class="badge badge-recorrencia">' + fmtRecorrenciaDetalhe(t) + '</span>' : '') +
     '</span>';
 
-  document.getElementById('detail-date').textContent      = fmtDate(t.date);
-  document.getElementById('detail-tratativa').textContent = t.tratativa ? fmtDate(t.tratativa) : '—';
+  document.getElementById('detail-date').textContent = fmtDate(t.date);
+
+  const detTratEl = document.getElementById('detail-tratativa');
+  if (detTratEl) detTratEl.textContent = t.tratativa ? fmtDate(t.tratativa) : '—';
 
   const tlColor = status === 'overdue' ? 'var(--danger)' : status === 'today' ? 'var(--warn)' : 'var(--ok)';
-  document.getElementById('detail-timeleft').innerHTML = tl ? '<span style="color:' + tlColor + '">' + tl + '</span>' : '—';
+  document.getElementById('detail-timeleft').innerHTML = tl
+    ? '<span style="color:' + tlColor + '">' + tl + '</span>' : '—';
 
   const detRecEl = document.getElementById('detail-recorrencia');
   if (detRecEl) detRecEl.textContent = fmtRecorrenciaDetalhe(t);
@@ -1659,7 +1677,10 @@ function openDetail(id) {
       '<div class="hist-item"><span class="hist-date">' + h.data + '</span>' +
       '<span class="hist-msg">' + esc(h.justificativa) + '</span>' +
       '<span class="hist-by">por ' + esc(h.por) + '</span>' +
-      (h.prazoAnterior ? '<div style="font-size:0.65rem;color:var(--muted);margin-top:3px">Prazo: ' + fmtDate(h.prazoAnterior) + ' → ' + fmtDate(h.prazoNovo) + '</div>' : '') +
+      (h.prazoAnterior
+        ? '<div style="font-size:0.65rem;color:var(--muted);margin-top:3px">Prazo: ' +
+          fmtDate(h.prazoAnterior) + ' → ' + fmtDate(h.prazoNovo) + '</div>'
+        : '') +
       '</div>'
     ).join('');
   } else {
@@ -1706,11 +1727,15 @@ function closeDetail() {
 
 function showToast(icon, title, msg, type) {
   const c = document.getElementById('toastContainer');
+  if (!c) return;
   const t = document.createElement('div');
   t.className = 'toast toast-' + (type || 'info');
   t.innerHTML = '<div class="toast-icon">' + icon + '</div><div><div class="toast-title">' + title + '</div><div class="toast-msg">' + msg + '</div></div>';
   c.appendChild(t);
-  setTimeout(() => { t.style.animation = 'toastOut 0.3s ease forwards'; setTimeout(() => t.remove(), 300); }, 5000);
+  setTimeout(() => {
+    t.style.animation = 'toastOut 0.3s ease forwards';
+    setTimeout(() => t.remove(), 300);
+  }, 5000);
 }
 
 setInterval(checkAlerts, 60000);
