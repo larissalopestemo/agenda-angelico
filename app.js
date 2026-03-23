@@ -1,6 +1,6 @@
 /* =============================================
    ANGÉLICO ADVOGADOS — AGENDA DE PRAZOS
-   app.js — v4.1 (Kanban + Tratativa + Recorrência)
+   app.js — v4.2 (fix recorrência + aviso email)
    ============================================= */
 
 const FIREBASE_CONFIG = {
@@ -40,7 +40,7 @@ let notifiedKeys      = new Set();
 let currentView       = 'list'; // 'list' | 'kanban'
 let kanbanWeekOffset  = 0;
 let draggedTaskId     = null;
-let pendingDrop       = null; // { taskId, dateStr } — aguardando justificativa
+let pendingDrop       = null;
 
 // =============================================
 // HELPERS
@@ -116,42 +116,45 @@ const DIAS_SEMANA = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sá
 /*
   recConfig = {
     type: 'none' | 'daily' | 'weekly' | 'monthly'
-    weekDay: 0-6  (só para weekly — 0=Dom...6=Sáb)
+    weekDay: 0-6  (só para weekly)
     monthDay: 1-31 (só para monthly)
-    hora: 'HH:MM' (hora do prazo na task recriada)
+    hora: 'HH:MM'
   }
 */
 
-function calcNextDate(baseStr, recConfig) {
+// =============================================
+// FIX PRINCIPAL — calcNextDate agora parte de
+// "agora" e nunca retorna data no passado
+// =============================================
+function calcNextDate(recConfig) {
   if (!recConfig || recConfig.type === 'none') return null;
-  const base = new Date(baseStr);
-  if (isNaN(base)) return null;
 
-  const hora  = recConfig.hora || '18:00';
+  const hora = recConfig.hora || '18:00';
   const [hh, mm] = hora.split(':').map(Number);
-  const now   = new Date();
+  const now  = new Date();
 
-  let next = new Date();
-  next.setSeconds(0); next.setMilliseconds(0);
+  let next = new Date(now);
+  next.setSeconds(0);
+  next.setMilliseconds(0);
   next.setHours(hh, mm, 0, 0);
 
   if (recConfig.type === 'daily') {
-    // Próximo dia após hoje (mesma hora)
+    // Sempre o próximo dia (nunca hoje/passado)
     next.setDate(now.getDate() + 1);
 
   } else if (recConfig.type === 'weekly') {
     const target = parseInt(recConfig.weekDay); // 0-6
     const today  = now.getDay();
     let diff = target - today;
-    if (diff <= 0) diff += 7; // sempre futuro
+    // Se diff <= 0 ou é hoje mas a hora já passou, vai para a próxima semana
+    if (diff < 0 || (diff === 0 && next <= now)) diff += 7;
     next.setDate(now.getDate() + diff);
 
   } else if (recConfig.type === 'monthly') {
-    const targetDay = parseInt(recConfig.monthDay); // 1-31
-    // Tenta este mês
+    const targetDay = parseInt(recConfig.monthDay);
     next.setDate(targetDay);
+    // Se a data calculada já passou (ou é hoje/passado), avança 1 mês
     if (next <= now) {
-      // Já passou — vai pro mês seguinte
       next.setMonth(next.getMonth() + 1);
       next.setDate(targetDay);
     }
@@ -169,7 +172,6 @@ function fmtRecorrenciaDetalhe(task) {
   return 'Sem recorrência';
 }
 
-// Lê o recConfig do formulário (prefixo: 'inp' ou 'edit')
 function readRecConfig(prefix) {
   const typeEl = document.getElementById(prefix + '-recorrencia');
   const type   = typeEl ? typeEl.value : 'none';
@@ -178,19 +180,18 @@ function readRecConfig(prefix) {
     return { type, hora: horaEl ? horaEl.value : '18:00' };
   }
   if (type === 'weekly') {
-    const wdEl  = document.getElementById(prefix + '-rec-weekday');
-    const horaEl= document.getElementById(prefix + '-rec-hora');
+    const wdEl   = document.getElementById(prefix + '-rec-weekday');
+    const horaEl = document.getElementById(prefix + '-rec-hora');
     return { type, weekDay: wdEl ? parseInt(wdEl.value) : 1, hora: horaEl ? horaEl.value : '18:00' };
   }
   if (type === 'monthly') {
-    const mdEl  = document.getElementById(prefix + '-rec-monthday');
-    const horaEl= document.getElementById(prefix + '-rec-hora');
+    const mdEl   = document.getElementById(prefix + '-rec-monthday');
+    const horaEl = document.getElementById(prefix + '-rec-hora');
     return { type, monthDay: mdEl ? parseInt(mdEl.value) : 1, hora: horaEl ? horaEl.value : '18:00' };
   }
   return { type: 'none' };
 }
 
-// Preenche o recConfig num formulário
 function writeRecConfig(prefix, cfg) {
   if (!cfg) return;
   const typeEl = document.getElementById(prefix + '-recorrencia');
@@ -209,13 +210,12 @@ function writeRecConfig(prefix, cfg) {
   }, 10);
 }
 
-// Mostra/oculta sub-campos conforme o tipo selecionado
 function updateRecorrenciaUI(prefix) {
-  const typeEl  = document.getElementById(prefix + '-recorrencia');
-  const type    = typeEl ? typeEl.value : 'none';
-  const wdWrap  = document.getElementById(prefix + '-rec-weekday-wrap');
-  const mdWrap  = document.getElementById(prefix + '-rec-monthday-wrap');
-  const horaWrap= document.getElementById(prefix + '-rec-hora-wrap');
+  const typeEl   = document.getElementById(prefix + '-recorrencia');
+  const type     = typeEl ? typeEl.value : 'none';
+  const wdWrap   = document.getElementById(prefix + '-rec-weekday-wrap');
+  const mdWrap   = document.getElementById(prefix + '-rec-monthday-wrap');
+  const horaWrap = document.getElementById(prefix + '-rec-hora-wrap');
 
   if (wdWrap)   wdWrap.style.display   = type === 'weekly'  ? 'block' : 'none';
   if (mdWrap)   mdWrap.style.display   = type === 'monthly' ? 'block' : 'none';
@@ -413,7 +413,6 @@ function showApp() {
   const privField = document.getElementById('field-privado');
   if (privField) privField.style.display = currentUser.role === 'admin' ? 'flex' : 'none';
 
-  // Filtro de responsável — só ADM
   const respFilterWrap = document.getElementById('admin-resp-filter');
   if (respFilterWrap) {
     if (currentUser.role === 'admin') {
@@ -553,21 +552,20 @@ function addTask() {
   const privCheck  = document.getElementById('inp-privado');
   const visibility = (currentUser.role === 'admin' && privCheck && privCheck.checked) ? 'private' : 'shared';
 
-  // Recorrência
   const recConfig = readRecConfig('inp');
 
   const task = {
     title,
-    desc:       document.getElementById('inp-desc').value.trim(),
+    desc:        document.getElementById('inp-desc').value.trim(),
     date,
-    tratativa:  tratativa || null,
-    recorrencia: recConfig.type, // mantém campo legado p/ badge
+    tratativa:   tratativa || null,
+    recorrencia: recConfig.type,
     recConfig,
     responsaveis,
-    proc:       document.getElementById('inp-proc').value.trim(),
-    cat:        document.getElementById('inp-cat').value,
-    prio:       selectedPrio,
-    alertMin:   (() => {
+    proc:        document.getElementById('inp-proc').value.trim(),
+    cat:         document.getElementById('inp-cat').value,
+    prio:        selectedPrio,
+    alertMin:    (() => {
       const sel = document.getElementById('inp-alert');
       if (sel.value === 'custom') {
         const customDt = document.getElementById('inp-alert-custom').value;
@@ -616,16 +614,15 @@ function resetForm() {
 function openEditModal(id) {
   const t = tasks.find(x => x.id == id);
   if (!t || !canEditTask(t)) return;
-  document.getElementById('edit-id').value        = id;
-  document.getElementById('edit-title').value     = t.title;
-  document.getElementById('edit-date').value      = t.date;
-  document.getElementById('edit-desc').value      = t.desc || '';
-  document.getElementById('edit-justif').value    = '';
+  document.getElementById('edit-id').value     = id;
+  document.getElementById('edit-title').value  = t.title;
+  document.getElementById('edit-date').value   = t.date;
+  document.getElementById('edit-desc').value   = t.desc || '';
+  document.getElementById('edit-justif').value = '';
 
   const editTratEl = document.getElementById('edit-tratativa');
   if (editTratEl) editTratEl.value = t.tratativa || '';
 
-  // Carrega recorrência no modal editar
   writeRecConfig('edit', t.recConfig || { type: t.recorrencia || 'none' });
 
   const container = document.getElementById('edit-responsaveis');
@@ -656,11 +653,11 @@ function closeEditModal() {
 }
 
 function saveEdit() {
-  const id        = document.getElementById('edit-id').value;
-  const title     = document.getElementById('edit-title').value.trim();
-  const date      = document.getElementById('edit-date').value;
-  const desc      = document.getElementById('edit-desc').value.trim();
-  const justif    = document.getElementById('edit-justif').value.trim();
+  const id     = document.getElementById('edit-id').value;
+  const title  = document.getElementById('edit-title').value.trim();
+  const date   = document.getElementById('edit-date').value;
+  const desc   = document.getElementById('edit-desc').value.trim();
+  const justif = document.getElementById('edit-justif').value.trim();
 
   if (!title)  { showToast('⚠️', 'Obrigatório', 'Informe o título.', 'warn'); return; }
   if (!date)   { showToast('⚠️', 'Obrigatório', 'Informe o prazo.', 'warn');  return; }
@@ -668,11 +665,11 @@ function saveEdit() {
 
   const t = tasks.find(x => x.id == id);
   const historico = [...(t.historico || []), {
-    data: fmtDate(new Date().toISOString()),
+    data:          fmtDate(new Date().toISOString()),
     prazoAnterior: t.date,
-    prazoNovo: date,
+    prazoNovo:     date,
     justificativa: justif,
-    por: currentUser.name
+    por:           currentUser.name
   }];
 
   const editContainer = document.getElementById('edit-responsaveis');
@@ -733,17 +730,36 @@ function toggleDone(id) {
   const t = tasks.find(x => x.id == id);
   if (!t || !canEditTask(t)) return;
 
-  // Se está sendo marcada como concluída E tem recorrência → cria próxima
+  // =========================================================
+  // FIX RECORRÊNCIA:
+  // Ao concluir tarefa recorrente, a nova task usa calcNextDate
+  // passando apenas o recConfig (sem depender do date antigo).
+  // A nova date é sempre futura e calculada a partir de "agora".
+  // =========================================================
   if (!t.done && t.recConfig && t.recConfig.type !== 'none') {
-    const nextDate = calcNextDate(t.date, t.recConfig);
+    const nextDate = calcNextDate(t.recConfig); // <-- passa só recConfig, sem date antiga
+
     if (nextDate) {
+      // Copia a task sem o id e reseta campos de instância
       const novaTask = {
-        ...t,
-        date:       nextDate,
-        tratativa:  null,
-        done:       false,
-        createdAt:  new Date().toISOString(),
-        historico:  [{
+        title:       t.title,
+        desc:        t.desc,
+        proc:        t.proc,
+        cat:         t.cat,
+        prio:        t.prio,
+        emails:      t.emails,
+        visibility:  t.visibility,
+        ownerEmail:  t.ownerEmail,
+        responsaveis:t.responsaveis,
+        recorrencia: t.recorrencia,
+        recConfig:   t.recConfig,
+        alertMin:    t.alertMin,
+        date:        nextDate,   // <-- novo prazo fatal calculado
+        tratativa:   null,       // <-- sem tratativa (volta ao backlog)
+        done:        false,
+        createdBy:   t.createdBy,
+        createdAt:   new Date().toISOString(),
+        historico:   [{
           data:          fmtDate(new Date().toISOString()),
           prazoAnterior: t.date,
           prazoNovo:     nextDate,
@@ -751,7 +767,7 @@ function toggleDone(id) {
           por:           currentUser.name
         }]
       };
-      delete novaTask.id;
+
       saveTaskFirebase(novaTask);
 
       showToast('🔁', 'Recorrência ativada',
@@ -759,7 +775,6 @@ function toggleDone(id) {
     }
   }
 
-  // Marca a task atual como concluída (ou reabre)
   updateTaskFirebase(id, { done: !t.done });
 }
 
@@ -811,7 +826,6 @@ function render() {
   if (currentFilter === 'done')    filtered = filtered.filter(t => t.done);
   if (currentPrioFilter !== 'all') filtered = filtered.filter(t => t.prio === currentPrioFilter);
 
-  // Filtro de responsável (só ADM vê o select)
   const respSel = document.getElementById('filter-resp');
   const respVal = respSel ? normalizeEmail(respSel.value) : 'all';
   if (respVal && respVal !== 'all') {
@@ -923,7 +937,6 @@ function renderKanban() {
   '</div>' +
   '<div class="kanban-board">';
 
-  // Coluna Backlog
   html += '<div class="kanban-col kanban-backlog" ' +
     'ondragover="event.preventDefault();this.classList.add(\'drag-over\')" ' +
     'ondragleave="this.classList.remove(\'drag-over\')" ' +
@@ -1031,7 +1044,6 @@ function onDropColumn(event, dateStr) {
     return;
   }
 
-  // Backlog — sempre livre
   if (!dateStr) {
     updateTaskFirebase(draggedTaskId, { tratativa: null });
     showToast('📋', 'Tratativa removida', 'Tarefa movida para o Backlog.', 'ok');
@@ -1043,20 +1055,16 @@ function onDropColumn(event, dateStr) {
   const prazoFatal = new Date(t.date);
   const dropDay    = new Date(dateStr + 'T00:00:00');
 
-  // Tratativa antes ou no mesmo dia do prazo fatal — livre
   if (dropDay <= prazoFatal) {
     updateTaskFirebase(draggedTaskId, { tratativa });
-    showToast('📋', 'Tratativa atualizada',
-      'Agendada para ' + fmtDateShort(tratativa) + '.', 'ok');
+    showToast('📋', 'Tratativa atualizada', 'Agendada para ' + fmtDateShort(tratativa) + '.', 'ok');
     draggedTaskId = null;
     return;
   }
 
-  // Tratativa DEPOIS do prazo fatal — exige justificativa
   pendingDrop = { taskId: draggedTaskId, dateStr };
   draggedTaskId = null;
 
-  // Preenche o modal com contexto
   const modalTitle = document.getElementById('drop-justif-title');
   const modalInfo  = document.getElementById('drop-justif-info');
   if (modalTitle) modalTitle.textContent = t.title;
@@ -1072,11 +1080,9 @@ function onDropColumn(event, dateStr) {
 function confirmDropAfterDeadline() {
   const justif = (document.getElementById('drop-justif-text')?.value || '').trim();
   if (!justif) {
-    showToast('⚠️', 'Justificativa obrigatória',
-      'Explique o motivo de tratar após o prazo fatal.', 'warn');
+    showToast('⚠️', 'Justificativa obrigatória', 'Explique o motivo de tratar após o prazo fatal.', 'warn');
     return;
   }
-
   if (!pendingDrop) return;
   const { taskId, dateStr } = pendingDrop;
   const tratativa = dateStr + 'T12:00';
@@ -1085,14 +1091,13 @@ function confirmDropAfterDeadline() {
   const historico = [...(t?.historico || []), {
     data:          fmtDate(new Date().toISOString()),
     prazoAnterior: t?.date,
-    prazoNovo:     t?.date, // prazo fatal não muda
+    prazoNovo:     t?.date,
     justificativa: '[Tratativa após prazo fatal] ' + justif,
     por:           currentUser.name
   }];
 
   updateTaskFirebase(taskId, { tratativa, historico });
-  showToast('📋', 'Tratativa atualizada',
-    'Agendada para ' + fmtDateShort(tratativa) + ' (após prazo fatal).', 'warn');
+  showToast('📋', 'Tratativa atualizada', 'Agendada para ' + fmtDateShort(tratativa) + ' (após prazo fatal).', 'warn');
 
   pendingDrop = null;
   document.getElementById('modalDropJustif').style.display = 'none';
@@ -1124,7 +1129,7 @@ function updateStats() {
 }
 
 // =============================================
-// ALERTAS
+// ALERTAS (browser — só quando está aberto)
 // =============================================
 function checkAlerts() {
   const now = new Date();
@@ -1293,7 +1298,6 @@ function openDetail(id) {
   const tlColor = status === 'overdue' ? 'var(--danger)' : status === 'today' ? 'var(--warn)' : 'var(--ok)';
   document.getElementById('detail-timeleft').innerHTML = tl ? '<span style="color:' + tlColor + '">' + tl + '</span>' : '—';
 
-  // Campo recorrência no detalhe
   const detRecEl = document.getElementById('detail-recorrencia');
   if (detRecEl) detRecEl.textContent = fmtRecorrenciaDetalhe(t);
 
