@@ -32,7 +32,8 @@ const ANDREA_EMAIL = 'andrea@anlema.com.br';
 const CRONOGRAMA_USERS = [
   'andrea@anlema.com.br',
   'paralegal@anlema.com.br',
-  'beatriz.amaro@anlema.com.br'
+  'beatriz.amaro@anlema.com.br',
+  'thiago.prado@anlema.com.br'
 ];
 
 let db                    = null;
