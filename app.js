@@ -1309,10 +1309,11 @@ function renderCronograma() {
       </div>
     </div>`;
   });
- 
+
   html += '</div>';
   area.innerHTML = html;
 }
+
 // =============================================
 // CRONOGRAMA — MODAL NOVA PUBLICAÇÃO
 // =============================================
@@ -1441,6 +1442,9 @@ function openCronogramaDetail(id) {
   const btnStatus = document.getElementById('cron-detail-btn-status');
   if (btnStatus) btnStatus.onclick = () => openCronogramaStatusModal(id);
 
+  const btnEdit = document.getElementById('cron-detail-btn-edit');
+  if (btnEdit) btnEdit.onclick = () => { closeCronogramaDetail(); openCronogramaEditModal(id); };
+
   const btnDel = document.getElementById('cron-detail-btn-del');
   if (btnDel) {
     const podeExcluir = currentUser.role === 'admin' ||
@@ -1505,6 +1509,7 @@ async function saveCronogramaStatus() {
     showToast('⚠️', 'Erro', 'Não foi possível atualizar o status.', 'warn');
   }
 }
+
 // =============================================
 // CRONOGRAMA — MODAL EDITAR PUBLICAÇÃO
 // =============================================
@@ -1512,7 +1517,7 @@ function openCronogramaEditModal(id) {
   const item  = cronogramaItems.find(x => x.id == id);
   const modal = document.getElementById('modalCronogramaEdit');
   if (!item || !modal) return;
- 
+
   document.getElementById('cron-edit-id').value        = id;
   document.getElementById('cron-edit-titulo').value    = item.titulo  || '';
   document.getElementById('cron-edit-data').value      = item.data    || '';
@@ -1520,15 +1525,15 @@ function openCronogramaEditModal(id) {
   document.getElementById('cron-edit-canal').value     = item.canal   || 'Instagram';
   document.getElementById('cron-edit-tipo').value      = item.tipo    || 'Feed';
   document.getElementById('cron-edit-responsavel').value = item.responsavel || 'paralegal@anlema.com.br';
- 
+
   modal.style.display = 'flex';
 }
- 
+
 function closeCronogramaEditModal() {
   const modal = document.getElementById('modalCronogramaEdit');
   if (modal) modal.style.display = 'none';
 }
- 
+
 async function saveCronogramaEdit() {
   const id       = document.getElementById('cron-edit-id').value;
   const titulo   = (document.getElementById('cron-edit-titulo')?.value || '').trim();
@@ -1537,11 +1542,11 @@ async function saveCronogramaEdit() {
   const canal    = (document.getElementById('cron-edit-canal')?.value  || '').trim();
   const tipo     = (document.getElementById('cron-edit-tipo')?.value   || '').trim();
   const obs      = (document.getElementById('cron-edit-obs')?.value    || '').trim();
- 
+
   if (!titulo)  { showToast('⚠️', 'Campo obrigatório', 'Informe o título.', 'warn');       return; }
   if (!dataRaw) { showToast('⚠️', 'Campo obrigatório', 'Informe a data.', 'warn');         return; }
   if (!resp)    { showToast('⚠️', 'Campo obrigatório', 'Informe o responsável.', 'warn'); return; }
- 
+
   try {
     await updateCronogramaFirebase(id, {
       titulo,
@@ -1558,7 +1563,7 @@ async function saveCronogramaEdit() {
     showToast('⚠️', 'Erro ao salvar', 'Não foi possível salvar no Firebase.', 'warn');
   }
 }
- 
+
 // =============================================
 // EMAILJS
 // =============================================
