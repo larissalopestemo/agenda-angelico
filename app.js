@@ -1443,7 +1443,7 @@ function openCronogramaDetail(id) {
   if (btnStatus) btnStatus.onclick = () => openCronogramaStatusModal(id);
 
   const btnEdit = document.getElementById('cron-detail-btn-edit');
-  if (btnEdit) btnEdit.onclick = () => { closeCronogramaDetail(); openCronogramaEditModal(id); };
+  if (btnEdit) btnEdit.onclick = (e) => { e.stopPropagation(); openCronogramaEditModal(id); };
 
   const btnDel = document.getElementById('cron-detail-btn-del');
   if (btnDel) {
@@ -1527,6 +1527,7 @@ function openCronogramaEditModal(id) {
   document.getElementById('cron-edit-responsavel').value = item.responsavel || 'paralegal@anlema.com.br';
 
   modal.style.display = 'flex';
+  closeCronogramaDetail();
 }
 
 function closeCronogramaEditModal() {
