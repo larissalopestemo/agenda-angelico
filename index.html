@@ -500,8 +500,8 @@
           <select id="cron-responsavel">
             <option value="paralegal@anlema.com.br">Larissa Lopes</option>
             <option value="beatriz.amaro@anlema.com.br">Beatriz Amaro</option>
-            <option value="andrea@anlema.com.br">Andrea Angélico</option>
             <option value="thiago.prado@anlema.com.br">Thiago Prado</option>
+            <option value="andrea@anlema.com.br">Andrea Angélico</option>
           </select>
         </div>
 
@@ -596,6 +596,10 @@
       <button id="cron-detail-btn-status" class="btn-detail-action btn-detail-secondary" style="display:inline-flex;align-items:center;gap:6px">
         ⊞ Alterar status
       </button>
+      <!-- Editar publicação -->
+      <button id="cron-detail-btn-edit" class="btn-detail-action btn-detail-secondary" style="display:inline-flex;align-items:center;gap:6px">
+        ✎ Editar
+      </button>
       <!-- Marcar como publicado -->
       <button id="cron-detail-btn-publicar" class="btn-detail-action" style="display:inline-flex;align-items:center;gap:6px">
         ✅ Marcar publicado
@@ -629,6 +633,67 @@
     <div class="modal-footer">
       <button class="btn-ghost" onclick="closeCronogramaStatusModal()">Cancelar</button>
       <button class="btn-primary" onclick="saveCronogramaStatus()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- =================== MODAL EDITAR PUBLICAÇÃO CRONOGRAMA =================== -->
+<div class="modal-overlay" id="modalCronogramaEdit" style="display:none" onclick="if(event.target===this)closeCronogramaEditModal()">
+  <div class="modal-box modal-sm">
+    <div class="modal-header">
+      <h3>Editar Publicação</h3>
+      <button class="modal-close" onclick="closeCronogramaEditModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="cron-edit-id">
+      <div class="form-grid">
+        <div class="field span-2">
+          <label>Título *</label>
+          <input type="text" id="cron-edit-titulo" placeholder="Ex: Post sobre oposição do INPI">
+        </div>
+        <div class="field">
+          <label>Data *</label>
+          <input type="date" id="cron-edit-data">
+        </div>
+        <div class="field">
+          <label>Responsável *</label>
+          <select id="cron-edit-responsavel">
+            <option value="paralegal@anlema.com.br">Larissa Lopes</option>
+            <option value="beatriz.amaro@anlema.com.br">Beatriz Amaro</option>
+            <option value="thiago.prado@anlema.com.br">Thiago Prado</option>
+            <option value="andrea@anlema.com.br">Andrea Angélico</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Canal</label>
+          <select id="cron-edit-canal">
+            <option value="Instagram">Instagram</option>
+            <option value="LinkedIn">LinkedIn</option>
+            <option value="Facebook">Facebook</option>
+            <option value="Site">Site</option>
+            <option value="Outro">Outro</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Tipo</label>
+          <select id="cron-edit-tipo">
+            <option value="Feed">Feed</option>
+            <option value="Story">Story</option>
+            <option value="Carrossel">Carrossel</option>
+            <option value="Reels">Reels</option>
+            <option value="Artigo">Artigo</option>
+            <option value="Outro">Outro</option>
+          </select>
+        </div>
+        <div class="field span-2">
+          <label>Observações</label>
+          <textarea id="cron-edit-obs" placeholder="Ex: falta legenda / aguarda aprovação / briefing pronto"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-ghost" onclick="closeCronogramaEditModal()">Cancelar</button>
+      <button class="btn-primary" onclick="saveCronogramaEdit()">Salvar Alterações</button>
     </div>
   </div>
 </div>
