@@ -1,6 +1,6 @@
 /* =============================================
    ANGÉLICO ADVOGADOS — AGENDA DE PRAZOS
-   app.js — v4.4 (corrigido)
+   app.js — v5 (notificações)
    ============================================= */
 
 const FIREBASE_CONFIG = {
@@ -33,7 +33,8 @@ const CRONOGRAMA_USERS = [
   'andrea@anlema.com.br',
   'paralegal@anlema.com.br',
   'beatriz.amaro@anlema.com.br',
-  'thiago.prado@anlema.com.br'
+  'thiago.prado@anlema.com.br',
+  'debora.pelogi@anlema.com.br'
 ];
 
 let db                    = null;
@@ -308,6 +309,7 @@ function connectFirebase() {
       ? existingApp.database()
       : firebase.database();
     if (currentUser) {
+      loadNotifiedKeys(); // carrega histórico de notificações do Firebase antes dos alertas
       listenTasks();
       listenCronograma();
       loadAvatar();
@@ -1168,6 +1170,17 @@ function updateStats() {
 // =============================================
 // ALERTAS
 // =============================================
+
+// Carrega notifiedKeys do Firebase (única fonte de verdade) para
+// evitar que o frontend duplique e-mails já enviados pela Cloud Function.
+function loadNotifiedKeys() {
+  if (!db) return;
+  db.ref('notificacoes').once('value', snap => {
+    const data = snap.val() || {};
+    notifiedKeys = new Set(Object.keys(data));
+  }).catch(() => {});
+}
+
 function checkAlerts() {
   const now = new Date();
   tasks.filter(t => canViewTask(t)).forEach(t => {
@@ -1175,23 +1188,37 @@ function checkAlerts() {
     const deadline   = new Date(t.date);
     const alertKey   = t.id + '-alert';
     const overdueKey = t.id + '-overdue';
+
+    // Alerta de aproximação — só dispara pelo frontend se a Cloud Function
+    // ainda não registrou (notifiedKeys vem do Firebase via loadNotifiedKeys).
     if (t.alertMin > 0 && !notifiedKeys.has(alertKey)) {
       const alertTime = new Date(deadline - t.alertMin * 60000);
       if (now >= alertTime && now < deadline) {
         const mins = Math.round((deadline - now) / 60000);
         const msg  = mins >= 60 ? Math.round(mins / 60) + 'h restantes' : mins + 'min restantes';
         showToast('🔔', 'Prazo se aproximando', t.title + ' — ' + msg, 'warn');
-        notifiedKeys.add(alertKey); saveNotified(); sendEmailAlert(t, msg);
+        notifiedKeys.add(alertKey);
+        saveNotified(alertKey);
+        // Frontend só envia e-mail se não há Cloud Function cuidando
+        // (a CF salva em notificacoes/ antes de chegar aqui na próxima rodada)
       }
     }
+
+    // Alerta de prazo vencido — toast sempre, e-mail só se CF ainda não enviou.
     if (!notifiedKeys.has(overdueKey) && now > deadline) {
       showToast('🚨', 'Prazo vencido!', t.title + ' — venceu em ' + fmtDate(t.date), 'danger');
-      notifiedKeys.add(overdueKey); saveNotified(); sendEmailOverdue(t);
+      notifiedKeys.add(overdueKey);
+      saveNotified(overdueKey);
     }
   });
 }
 
-function saveNotified() {
+// Salva a chave no Firebase (fonte de verdade compartilhada com a Cloud Function)
+// e também no localStorage como fallback rápido.
+function saveNotified(key) {
+  if (db && key) {
+    db.ref('notificacoes/' + key).set(new Date().toISOString()).catch(() => {});
+  }
   localStorage.setItem('angelico-notified', JSON.stringify([...notifiedKeys]));
 }
 
