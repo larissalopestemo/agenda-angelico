@@ -1,6 +1,6 @@
 /* =============================================
    ANGÉLICO ADVOGADOS — AGENDA DE PRAZOS
-   app.js — v5 (notificações)
+   app.js — v5.1 (notificações)
    ============================================= */
 
 const FIREBASE_CONFIG = {
@@ -809,7 +809,7 @@ function toggleDone(id) {
         recConfig:    t.recConfig,
         alertMin:     t.alertMin,
         date:         nextDate,
-        tratativa:    null,
+        tratativa:    nextDate,
         done:         false,
         createdBy:    t.createdBy,
         createdAt:    new Date().toISOString(),
